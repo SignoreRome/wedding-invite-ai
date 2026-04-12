@@ -8,9 +8,17 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
-dist
-dist-ssr
+.next
+out
 *.local
+.env*.local
+!.env.example
+*.tsbuildinfo
+data/*.db
+data/*.db-journal
+data/*.db-shm
+data/*.db-wal
+!data/.gitkeep
 
 # Editor directories and files
 .vscode/*
