@@ -1,18 +1,19 @@
-## Wedding Invitation Site
+## Сайт свадебного приглашения
 
-Production-ready foundation for a wedding invitation website built with Next.js, TypeScript, App Router, and Tailwind CSS. The project is mobile-first, keeps a retro Windows 95 / XP mood, and is structured so an RSVP flow can be added later without rebuilding the public page.
+Production-ready основа для сайта свадебного приглашения на Next.js, TypeScript, App Router и Tailwind CSS. Проект разрабатывается по принципу mobile-first, сохраняет ретро-настроение Windows 95 / XP и сейчас оформляет публичную страницу как приглашение в стиле мастера установки Windows XP.
 
-### What is included
+### Что входит в проект
 
-- One public invitation page at `/`
-- Next.js App Router setup with TypeScript
-- Tailwind CSS with a small retro UI layer
-- Prisma setup configured for SQLite
-- Clean component structure for extending the invitation and adding RSVP
-- System font stack for fast loading on mobile devices
-- Production-friendly Next.js config with `output: "standalone"` for VPS deployment
+- Одна публичная страница приглашения по маршруту `/`
+- Секции `hero`, дата и место, дресс-код и опрос гостей
+- Настроенный Next.js App Router с TypeScript
+- Tailwind CSS с небольшим ретро-UI слоем
+- Prisma, настроенная для работы с SQLite
+- Чистая структура компонентов для развития страницы и добавления RSVP
+- Системный стек шрифтов для быстрой загрузки на мобильных устройствах
+- Production-friendly конфигурация Next.js с `output: "standalone"` для деплоя на VPS
 
-### Stack
+### Стек
 
 - Next.js 16
 - React 18
@@ -21,7 +22,7 @@ Production-ready foundation for a wedding invitation website built with Next.js,
 - Prisma
 - SQLite
 
-### Project structure
+### Структура проекта
 
 ```text
 src/
@@ -32,11 +33,12 @@ src/
   components/
     invitation-page.tsx
     sections/
+      dress-code-section.tsx
       event-details-section.tsx
+      guest-survey-section.tsx
       hero-section.tsx
-      rsvp-preview-section.tsx
     ui/
-      window-frame.tsx
+      setup-wizard.tsx
   lib/
     invitation-content.ts
 prisma/
@@ -48,84 +50,84 @@ data/
   .gitkeep
 ```
 
-### Local development
+### Локальная разработка
 
-1. Install dependencies:
+1. Установите зависимости:
 
    ```bash
    npm install
    ```
 
-2. Create a local env file:
+2. Создайте локальный env-файл:
 
    ```bash
    cp .env.example .env.local
    ```
 
-3. Start the dev server:
+3. Запустите dev-сервер:
 
    ```bash
    npm run dev
    ```
 
-4. Open [http://localhost:3000](http://localhost:3000).
+4. Откройте [http://localhost:3000](http://localhost:3000).
 
-### Environment variables
+### Переменные окружения
 
-Current variables:
+Текущие переменные:
 
-- `DATABASE_URL` — SQLite connection string, default local path is `file:./data/dev.db`
-- `NEXT_PUBLIC_SITE_URL` — public site URL used for metadata and canonical links
+- `DATABASE_URL` — строка подключения SQLite, локальный путь по умолчанию: `file:./data/dev.db`
+- `NEXT_PUBLIC_SITE_URL` — публичный URL сайта, используется для метаданных и canonical-ссылок
 
-### Build and run
+### Сборка и запуск
 
-Create a production build:
+Соберите production-версию:
 
 ```bash
 npm run build
 ```
 
-Run the app locally in production mode:
+Запустите приложение локально в production-режиме:
 
 ```bash
 npm run start
 ```
 
-### Database and migrations
+### База данных и миграции
 
-Generate the Prisma client:
+Сгенерируйте Prisma Client:
 
 ```bash
 npm run db:generate
 ```
 
-Create and apply a local migration during development:
+Создайте и примените локальную миграцию во время разработки:
 
 ```bash
 npm run db:migrate -- --name init
 ```
 
-Apply committed migrations on the VPS:
+Примените закоммиченные миграции на VPS:
 
 ```bash
 npm run db:deploy
 ```
 
-### Deployment notes for VPS
+### Заметки по деплою на VPS
 
-- The project uses `output: "standalone"`, which fits a simple VPS deployment flow well.
-- The SQLite database should live in a stable directory outside build output.
-- For local development the default file is `./data/dev.db`.
-- For production, set `DATABASE_URL` to a stable path like `file:/var/www/wedding-invite/data/production.db`.
-- Put Nginx in front of `next start` and proxy requests to the chosen application port.
-- Backup the SQLite file and its WAL/SHM companions from the persistent `data/` directory.
+- Проект использует `output: "standalone"`, что хорошо подходит для простого деплоя на одном VPS.
+- Файл SQLite-базы должен храниться в стабильной директории вне build-артефактов.
+- Для локальной разработки по умолчанию используется файл `./data/dev.db`.
+- Для production задайте `DATABASE_URL` на стабильный путь, например `file:/var/www/wedding-invite/data/production.db`.
+- Поставьте Nginx перед `next start` и проксируйте запросы на выбранный порт приложения.
+- Делайте резервные копии SQLite-файла и его WAL/SHM-спутников из постоянной директории `data/`.
 
-### Content updates
+### Обновление контента
 
-- Edit invitation copy, schedule, venue, and RSVP deadline in [`src/lib/invitation-content.ts`](./src/lib/invitation-content.ts).
-- The RSVP section is currently a prepared placeholder so the future form can be added without rebuilding the layout.
+- Редактируйте тексты приглашения, тайминг, площадку, палитру дресс-кода и дедлайн RSVP в [`src/lib/invitation-content.ts`](./src/lib/invitation-content.ts).
+- Секция опроса гостей уже присутствует на публичной странице как UI и позже может быть подключена к серверной валидации и сохранению.
 
-### RSVP foundation
+### Основа для RSVP
 
-- SQLite is configured through Prisma in [`prisma/schema.prisma`](./prisma/schema.prisma) and [`prisma.config.ts`](./prisma.config.ts).
-- A placeholder `RsvpResponse` model is already defined, so the future form can persist guest responses with a safe server-side flow.
+- SQLite настроена через Prisma в [`prisma/schema.prisma`](./prisma/schema.prisma) и [`prisma.config.ts`](./prisma.config.ts).
+- Плейсхолдер-модель `RsvpResponse` уже определена, поэтому будущая форма сможет безопасно сохранять ответы гостей через серверный flow.
