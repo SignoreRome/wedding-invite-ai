@@ -1,3 +1,22 @@
+import type { ReactNode } from "react";
+
+type SidebarItemProps = {
+    active?: boolean;
+    number: string;
+    title: string;
+};
+
+type ContentPanelProps = {
+    children: ReactNode;
+    dotColor: string;
+    title: string;
+};
+
+type XpButtonProps = {
+    children: ReactNode;
+    secondary?: boolean;
+};
+
 export default function WeddingInviteWindows() {
     const surveyOptions = [
         "Обязательно буду",
@@ -217,7 +236,7 @@ export default function WeddingInviteWindows() {
 );
 }
 
-function SidebarItem({ number, title, active = false }) {
+function SidebarItem({ number, title, active = false }: SidebarItemProps) {
     return (
         <div
             className={`flex items-center gap-3 px-3 py-2 border ${
@@ -238,7 +257,7 @@ function SidebarItem({ number, title, active = false }) {
 );
 }
 
-function ContentPanel({ title, dotColor, children }) {
+function ContentPanel({ title, dotColor, children }: ContentPanelProps) {
     return (
         <section className="border border-[#7f9db9] bg-[#f8f8f8]">
         <div className="px-4 py-3 border-b border-[#c7c7c7] bg-gradient-to-r from-white to-[#eef3ff] flex items-center gap-2">
@@ -250,7 +269,7 @@ function ContentPanel({ title, dotColor, children }) {
 );
 }
 
-function XpButton({ children, secondary = false }) {
+function XpButton({ children, secondary = false }: XpButtonProps) {
     return (
         <button
             type="button"

@@ -1,66 +1,51 @@
-import { WindowFrame } from "@/components/ui/window-frame";
-import { invitationContent } from "@/lib/invitation-content";
-
-const stats = [
-  {
-    label: "Дата",
-    value: invitationContent.dateLabel,
-  },
-  {
-    label: "Время",
-    value: invitationContent.timeLabel,
-  },
-  {
-    label: "Город",
-    value: invitationContent.city,
-  },
-] as const;
+import { SetupCard } from '@/components/ui/setup-wizard';
+import { invitationContent } from '@/lib/invitation-content';
 
 export function HeroSection() {
   return (
-    <WindowFrame
+    <section
       id="invite"
-      title="invite.exe"
-      subtitle="Главная публичная страница приглашения"
+      className="border border-[#7f9db9] bg-white shadow-[inset_1px_1px_0_white]"
     >
-      <div className="flex flex-col gap-5">
-        <div className="inline-flex w-fit items-center gap-2 rounded-full bg-[#fef4c2] px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-[#6d5713]">
-          <span className="inline-block h-2.5 w-2.5 rounded-full bg-[#2ca24f]" />
-          Сохрани дату
+      <div className="border-b border-[#c7c7c7] bg-gradient-to-r from-white to-[#f3f7ff] px-4 py-3">
+        <div className="mb-1 text-xs uppercase tracking-wide text-[#4b4b4b]">
+          Мастер приглашения
         </div>
+        <h1 className="text-3xl font-black leading-none text-[#003399] md:text-4xl">
+          Мы женимся!
+        </h1>
+        <div className="mt-2 text-sm font-bold text-[#5a5a5a] md:text-base">
+          [ Save the date ] {invitationContent.dateCompact}
+        </div>
+      </div>
 
-        <div className="space-y-3">
-          <p className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-500">
-            {invitationContent.kicker}
-          </p>
-          <h1 className="max-w-3xl text-4xl font-black tracking-tight text-slate-900 sm:text-5xl">
-            {invitationContent.couple}
-          </h1>
-          <p className="max-w-2xl text-base leading-7 text-slate-700 sm:text-lg">
+      <div className="grid items-start gap-5 p-5 lg:grid-cols-[1.2fr_0.8fr]">
+        <div>
+          <div className="mb-3 inline-block border border-[#808080] bg-[#ffffcc] px-2 py-1 text-xs">
+            Новое событие обнаружено
+          </div>
+          <p className="max-w-2xl text-base leading-relaxed md:text-lg">
             {invitationContent.intro}
           </p>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-3">
-          {stats.map((item) => (
-            <div key={item.label} className="win95-inset p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                {item.label}
-              </p>
-              <p className="mt-2 text-lg font-bold text-slate-900">{item.value}</p>
+        <SetupCard eyebrow="Системная информация">
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between gap-3 border-b border-dotted border-[#808080] pb-1">
+              <span>Файл события</span>
+              <span className="font-bold">Wedding Day</span>
             </div>
-          ))}
-        </div>
-
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <a className="win95-button" href="#details">
-            Посмотреть программу дня
-          </a>
-          <a className="win95-button win95-button--secondary" href="#rsvp">
-            Открыть RSVP-раздел
-          </a>
-        </div>
+            <div className="flex justify-between gap-3 border-b border-dotted border-[#808080] pb-1">
+              <span>Версия</span>
+              <span className="font-bold">{invitationContent.dateCompact}</span>
+            </div>
+            <div className="flex justify-between gap-3 border-b border-dotted border-[#808080] pb-1">
+              <span>Возрастные ограничения</span>
+              <span className="font-bold text-[#8b0000]">18+</span>
+            </div>
+          </div>
+        </SetupCard>
       </div>
-    </WindowFrame>
+    </section>
   );
 }
