@@ -7,6 +7,7 @@ Production-ready foundation for a wedding invitation website built with Next.js,
 - One public invitation page at `/`
 - Next.js App Router setup with TypeScript
 - Tailwind CSS with a small retro UI layer
+- Prisma setup configured for SQLite
 - Clean component structure for extending the invitation and adding RSVP
 - System font stack for fast loading on mobile devices
 - Production-friendly Next.js config with `output: "standalone"` for VPS deployment
@@ -17,6 +18,8 @@ Production-ready foundation for a wedding invitation website built with Next.js,
 - React 18
 - TypeScript
 - Tailwind CSS
+- Prisma
+- SQLite
 
 ### Project structure
 
@@ -36,6 +39,13 @@ src/
       window-frame.tsx
   lib/
     invitation-content.ts
+prisma/
+  migrations/
+    .gitkeep
+  schema.prisma
+prisma.config.ts
+data/
+  .gitkeep
 ```
 
 ### Local development
@@ -64,11 +74,8 @@ src/
 
 Current variables:
 
+- `DATABASE_URL` — SQLite connection string, default local path is `file:./data/dev.db`
 - `NEXT_PUBLIC_SITE_URL` — public site URL used for metadata and canonical links
-
-Reserved for the future RSVP backend:
-
-- `DATABASE_URL` — recommended SQLite path when RSVP persistence is introduced
 
 ### Build and run
 
@@ -84,14 +91,41 @@ Run the app locally in production mode:
 npm run start
 ```
 
+### Database and migrations
+
+Generate the Prisma client:
+
+```bash
+npm run db:generate
+```
+
+Create and apply a local migration during development:
+
+```bash
+npm run db:migrate -- --name init
+```
+
+Apply committed migrations on the VPS:
+
+```bash
+npm run db:deploy
+```
+
 ### Deployment notes for VPS
 
 - The project uses `output: "standalone"`, which fits a simple VPS deployment flow well.
-- Keep future SQLite files outside build directories such as `.next/`.
-- If you add RSVP persistence later, store the database in a stable path like `/var/www/wedding-invite/data/production.db`.
+- The SQLite database should live in a stable directory outside build output.
+- For local development the default file is `./data/dev.db`.
+- For production, set `DATABASE_URL` to a stable path like `file:/var/www/wedding-invite/data/production.db`.
 - Put Nginx in front of `next start` and proxy requests to the chosen application port.
+- Backup the SQLite file and its WAL/SHM companions from the persistent `data/` directory.
 
 ### Content updates
 
 - Edit invitation copy, schedule, venue, and RSVP deadline in [`src/lib/invitation-content.ts`](./src/lib/invitation-content.ts).
 - The RSVP section is currently a prepared placeholder so the future form can be added without rebuilding the layout.
+
+### RSVP foundation
+
+- SQLite is configured through Prisma in [`prisma/schema.prisma`](./prisma/schema.prisma) and [`prisma.config.ts`](./prisma.config.ts).
+- A placeholder `RsvpResponse` model is already defined, so the future form can persist guest responses with a safe server-side flow.
