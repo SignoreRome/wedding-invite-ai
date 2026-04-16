@@ -1,4 +1,5 @@
 import { DressCodeSection } from '@/components/sections/dress-code-section';
+import { EveningProgramSection } from '@/components/sections/evening-program-section';
 import { EventDetailsSection } from '@/components/sections/event-details-section';
 import { GuestSurveySection } from '@/components/sections/guest-survey-section';
 import { HeroSection } from '@/components/sections/hero-section';
@@ -21,6 +22,10 @@ const wizardSteps = [
   },
   {
     index: '04',
+    title: 'Программа вечера',
+  },
+  {
+    index: '05',
     title: 'Опрос гостей',
   },
 ] as const;
@@ -44,6 +49,8 @@ export function InvitationPage() {
             <EventDetailsSection />
             <DressCodeSection />
           </section>
+
+          <EveningProgramSection />
 
           <GuestSurveySection />
 
