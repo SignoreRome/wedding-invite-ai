@@ -33,7 +33,7 @@ export function HeroSection() {
           <div className="space-y-2 text-sm">
             <div className="flex justify-between gap-3 border-b border-dotted border-[#808080] pb-1">
               <span>Файл события</span>
-              <span className="font-bold">Wedding Day</span>
+              <span className="font-bold">Свадьба</span>
             </div>
             <div className="flex justify-between gap-3 border-b border-dotted border-[#808080] pb-1">
               <span>Версия</span>
