@@ -1,4 +1,4 @@
-import { SetupCard, SetupSection } from '@/components/ui/setup-wizard';
+import { SetupCard, SetupSection, XpButton } from '@/components/ui/setup-wizard';
 import { invitationContent } from '@/lib/invitation-content';
 
 export function EventDetailsSection() {
@@ -23,9 +23,16 @@ export function EventDetailsSection() {
             {invitationContent.venue.name}
           </div>
           <p className="mt-2 text-sm">{invitationContent.venue.address}</p>
-          <div className="mt-3 border border-[#808080] bg-[#ffffcc] p-3 text-sm">
-            {invitationContent.venue.mapHint}
+          <div className="mt-3">
+            <XpButton href={invitationContent.venue.twoGisUrl}>
+              Открыть в 2ГИС
+            </XpButton>
           </div>
+          {invitationContent.venue.mapHint ? (
+            <div className="mt-3 border border-[#808080] bg-[#ffffcc] p-3 text-sm">
+              {invitationContent.venue.mapHint}
+            </div>
+          ) : null}
           <div className="mt-2 font-mono text-xs text-[#555]">
             C:\wedding\location\venue_info.txt
           </div>
