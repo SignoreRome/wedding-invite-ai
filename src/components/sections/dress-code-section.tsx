@@ -6,7 +6,7 @@ export function DressCodeSection() {
     <SetupSection id="dress-code" accentColor="#7a3db8" title="Дресс-код">
       <div className="space-y-4">
         <SetupCard>
-          <p className="text-sm leading-relaxed">
+          <p className="whitespace-pre-line text-sm leading-relaxed">
             {invitationContent.dressCode.description}
           </p>
         </SetupCard>
@@ -24,13 +24,6 @@ export function DressCodeSection() {
               </p>
             </div>
           ))}
-        </div>
-
-        <div className="border border-[#7f9db9] bg-white p-3 text-sm">
-          <p>
-            Избегайте полностью белых образов, чтобы этот цвет остался за
-            невестой. {invitationContent.dressCode.note}
-          </p>
         </div>
       </div>
     </SetupSection>

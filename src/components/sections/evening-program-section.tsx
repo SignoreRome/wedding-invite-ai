@@ -22,11 +22,6 @@ export function EveningProgramSection() {
               <h3 className="text-base font-bold text-black sm:text-lg">
                 {item.title}
               </h3>
-              {item.description ? (
-                <p className="mt-1 text-sm leading-relaxed text-[#444]">
-                  {item.description}
-                </p>
-              ) : null}
             </div>
           </div>
         ))}
