@@ -43,11 +43,14 @@ src/
     invitation-content.ts
 prisma/
   migrations/
-    .gitkeep
+    20260426000000_init/
+      migration.sql
   schema.prisma
 prisma.config.ts
 data/
   .gitkeep
+scripts/
+  ensure-sqlite-db.mjs
 ```
 
 ### Локальная разработка
@@ -76,7 +79,7 @@ data/
 
 Текущие переменные:
 
-- `DATABASE_URL` — строка подключения SQLite, локальный путь по умолчанию: `file:./data/dev.db`
+- `DATABASE_URL` — строка подключения SQLite, локальный путь по умолчанию: `file:./data/dev.db`; файл базы лежит в `data/dev.db` в корне проекта
 - `NEXT_PUBLIC_SITE_URL` — публичный URL сайта, используется для метаданных и canonical-ссылок
 
 ### Сборка и запуск
@@ -101,10 +104,24 @@ npm run start
 npm run db:generate
 ```
 
-Создайте и примените локальную миграцию во время разработки:
+Подготовьте SQLite-файл, если он еще не создан:
 
 ```bash
-npm run db:migrate -- --name init
+npm run db:prepare
+```
+
+Команды миграций и Prisma Studio запускают эту подготовку автоматически.
+
+Подготовьте новую миграцию без применения:
+
+```bash
+npm run db:migrate:create -- --name migration_name
+```
+
+Примените миграции локально во время разработки:
+
+```bash
+npm run db:migrate
 ```
 
 Примените закоммиченные миграции на VPS:
@@ -131,4 +148,8 @@ npm run db:deploy
 ### Основа для RSVP
 
 - SQLite настроена через Prisma в [`prisma/schema.prisma`](./prisma/schema.prisma) и [`prisma.config.ts`](./prisma.config.ts).
-- Плейсхолдер-модель `RsvpResponse` уже определена, поэтому будущая форма сможет безопасно сохранять ответы гостей через серверный flow.
+- Первая миграция находится в [`prisma/migrations/20260426000000_init/migration.sql`](./prisma/migrations/20260426000000_init/migration.sql).
+- В приложении определена одна RSVP-модель `Rsvp`, которая мапится на SQLite-таблицу `rsvp`.
+- Таблица `rsvp` содержит колонки: `id`, `guest_name`, `is_attending`, `has_plus_one`, `plus_one_name`, `needs_transfer`, `guest_comment`, `created_at`, `updated_at`.
+- При применении миграций Prisma дополнительно создает служебную таблицу `_prisma_migrations`; прикладная таблица проекта остается только `rsvp`.
+- Секция опроса пока остается только UI; серверное сохранение формы через Prisma нужно подключать отдельным изменением с серверной валидацией.
