@@ -102,11 +102,11 @@ export const invitationContent: {
   surveyOptions: [
     {
       description: 'Подтверждаю, что буду на свадьбе.',
-      label: 'Буду присутствовать',
+      label: 'Да, буду присутствовать',
     },
     {
       description: 'К сожалению, не смогу присутствовать.',
-      label: 'Не буду',
+      label: 'К сожалению, не смогу',
     },
   ],
   timeLabel: '15:00',
