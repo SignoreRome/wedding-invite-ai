@@ -32,6 +32,7 @@ type SetupCardProps = {
 type XpButtonProps = {
   children: ReactNode;
   className?: string;
+  disabled?: boolean;
   href?: string;
   secondary?: boolean;
   type?: 'button' | 'reset' | 'submit';
@@ -181,26 +182,30 @@ export function SetupCard({
 export function XpButton({
   children,
   className,
+  disabled = false,
   href,
   secondary = false,
   type = 'button',
 }: XpButtonProps) {
   const classes = cn(
-    'rounded-[3px] border border-t-white border-l-white border-r-[#404040] border-b-[#404040] px-5 py-2 text-sm font-bold',
+    'rounded-[3px] border border-t-white border-l-white border-r-[#404040] border-b-[#404040] px-5 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:border-[#808080] disabled:bg-[#c0c0c0] disabled:text-[#606060]',
     secondary ? 'bg-[#e7e7e7]' : 'bg-[#d4e7ff]',
+    disabled && href
+      ? 'pointer-events-none cursor-not-allowed opacity-70'
+      : null,
     className,
   );
 
   if (href) {
     return (
-      <a className={classes} href={href}>
+      <a aria-disabled={disabled} className={classes} href={href}>
         {children}
       </a>
     );
   }
 
   return (
-    <button className={classes} type={type}>
+    <button className={classes} disabled={disabled} type={type}>
       {children}
     </button>
   );
