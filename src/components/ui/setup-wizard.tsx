@@ -1,8 +1,17 @@
-import type { CSSProperties, ReactNode } from 'react';
+'use client';
+
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 
 type SetupStep = {
   active?: boolean;
   index: string;
+  targetId: string;
   title: string;
 };
 
@@ -38,11 +47,29 @@ type XpButtonProps = {
   type?: 'button' | 'reset' | 'submit';
 };
 
+type SetupWizardStepProps = SetupStep & {
+  active: boolean;
+  onActivate: (targetId: string) => void;
+};
+
 const chromeButtons = ['_', '□', '×'] as const;
 const menuItems = ['Файл', 'Правка', 'Вид', 'Справка'] as const;
 
 function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(' ');
+}
+
+function areStepIdsEqual(first: readonly string[], second: readonly string[]) {
+  return (
+    first.length === second.length &&
+    first.every((stepId, index) => stepId === second[index])
+  );
+}
+
+function getInitialActiveStepIds(steps: readonly SetupStep[]) {
+  const initialStep = steps.find((step) => step.active) ?? steps[0];
+
+  return initialStep ? [initialStep.targetId] : [];
 }
 
 export function SetupWizardShell({
@@ -52,8 +79,80 @@ export function SetupWizardShell({
   title,
   versionLabel,
 }: SetupWizardShellProps) {
+  const sectionIds = useMemo(() => steps.map((step) => step.targetId), [steps]);
+  const [activeStepIds, setActiveStepIds] = useState<readonly string[]>(() =>
+    getInitialActiveStepIds(steps),
+  );
+
+  useEffect(() => {
+    if (sectionIds.length === 0) {
+      return;
+    }
+
+    let animationFrameId: number | null = null;
+
+    const updateActiveSteps = () => {
+      const viewportMarker = window.innerHeight * 0.35;
+      const visibleStepIds: string[] = [];
+      let fallbackStepId = sectionIds[0];
+      let closestPreviousTop = Number.NEGATIVE_INFINITY;
+
+      for (const sectionId of sectionIds) {
+        const section = document.getElementById(sectionId);
+
+        if (!section) {
+          continue;
+        }
+
+        const rect = section.getBoundingClientRect();
+
+        if (rect.top <= viewportMarker && rect.bottom >= viewportMarker) {
+          visibleStepIds.push(sectionId);
+        }
+
+        if (rect.top <= viewportMarker && rect.top > closestPreviousTop) {
+          fallbackStepId = sectionId;
+          closestPreviousTop = rect.top;
+        }
+      }
+
+      const nextActiveStepIds =
+        visibleStepIds.length > 0 ? visibleStepIds : [fallbackStepId];
+
+      setActiveStepIds((currentStepIds) =>
+        areStepIdsEqual(currentStepIds, nextActiveStepIds)
+          ? currentStepIds
+          : nextActiveStepIds,
+      );
+    };
+
+    const scheduleUpdate = () => {
+      if (animationFrameId !== null) {
+        return;
+      }
+
+      animationFrameId = window.requestAnimationFrame(() => {
+        animationFrameId = null;
+        updateActiveSteps();
+      });
+    };
+
+    updateActiveSteps();
+    window.addEventListener('scroll', scheduleUpdate, { passive: true });
+    window.addEventListener('resize', scheduleUpdate);
+
+    return () => {
+      if (animationFrameId !== null) {
+        window.cancelAnimationFrame(animationFrameId);
+      }
+
+      window.removeEventListener('scroll', scheduleUpdate);
+      window.removeEventListener('resize', scheduleUpdate);
+    };
+  }, [sectionIds]);
+
   return (
-    <div className="overflow-hidden rounded-[6px] border-t-2 border-l-2 border-r-2 border-b-2 border-t-white border-l-white border-r-[#404040] border-b-[#404040] bg-[#d4d0c8] shadow-[10px_10px_0_rgba(0,0,0,0.22)]">
+    <div className="overflow-clip rounded-[6px] border-t-2 border-l-2 border-r-2 border-b-2 border-t-white border-l-white border-r-[#404040] border-b-[#404040] bg-[#d4d0c8] shadow-[10px_10px_0_rgba(0,0,0,0.22)]">
       <div className="flex items-center justify-between gap-3 bg-gradient-to-r from-[#0054e3] via-[#2b7cff] to-[#67a7ff] px-3 py-2 text-sm font-bold text-white">
         <span className="truncate text-sm font-bold">{title}</span>
 
@@ -100,14 +199,24 @@ export function SetupWizardShell({
             </div>
           </div>
 
-          <div className="mt-6 hidden space-y-3 text-sm lg:block">
-            {steps.map((step) => (
-              <SetupWizardStep key={step.index} {...step} />
-            ))}
-          </div>
+          <div className="lg:sticky lg:top-8 lg:max-h-[calc(100vh-4rem)] lg:overflow-y-auto">
+            <nav
+              aria-label="Разделы приглашения"
+              className="mt-6 hidden space-y-3 text-sm lg:block"
+            >
+              {steps.map((step) => (
+                <SetupWizardStep
+                  key={step.index}
+                  {...step}
+                  active={activeStepIds.includes(step.targetId)}
+                  onActivate={(targetId) => setActiveStepIds([targetId])}
+                />
+              ))}
+            </nav>
 
-          <div className="mt-8 hidden whitespace-pre-line rounded-[4px] border border-white/40 bg-[#ffffff22] p-3 text-xs leading-relaxed text-white/95 lg:block">
-            {note}
+            <div className="mt-8 hidden whitespace-pre-line rounded-[4px] border border-white/40 bg-[#ffffff22] p-3 text-xs leading-relaxed text-white/95 lg:block">
+              {note}
+            </div>
           </div>
         </aside>
 
@@ -211,15 +320,24 @@ export function XpButton({
   );
 }
 
-function SetupWizardStep({ active = false, index, title }: SetupStep) {
+function SetupWizardStep({
+  active,
+  index,
+  onActivate,
+  targetId,
+  title,
+}: SetupWizardStepProps) {
   return (
-    <div
+    <a
+      aria-current={active ? 'location' : undefined}
       className={cn(
-        'flex items-center gap-3 border px-3 py-2',
+        'flex items-center gap-3 border px-3 py-2 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white',
         active
           ? 'border-white bg-white text-[#003399]'
-          : 'border-white/40 bg-white/15 text-white',
+          : 'border-white/40 bg-white/15 text-white hover:border-white/70 hover:bg-white/25',
       )}
+      href={`#${targetId}`}
+      onClick={() => onActivate(targetId)}
     >
       <div
         className={cn(
@@ -232,6 +350,6 @@ function SetupWizardStep({ active = false, index, title }: SetupStep) {
         {index}
       </div>
       <div className="font-bold">{title}</div>
-    </div>
+    </a>
   );
 }
