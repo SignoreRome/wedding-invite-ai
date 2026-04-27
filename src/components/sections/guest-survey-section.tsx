@@ -1,9 +1,14 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useState, type FocusEvent, type FormEvent } from 'react';
 
 import { SetupSection, XpButton } from '@/components/ui/setup-wizard';
 import { invitationContent } from '@/lib/invitation-content';
+import {
+  formatGuestFullName,
+  sanitizeGuestFullNameInput,
+  validateGuestFullNameFormat,
+} from '@/lib/rsvp-name';
 
 const fieldClassName =
   'w-full resize-none border border-[#7f9db9] bg-white px-3 py-2 text-sm text-black outline-none disabled:bg-[#f0f0f0] disabled:text-[#666] disabled:placeholder:text-[#777]';
@@ -33,6 +38,8 @@ type SubmitState = {
   message: string;
   status: 'idle' | 'loading' | 'success' | 'error';
 };
+
+type BooleanRadioValue = 'true' | 'false';
 
 type RsvpApiResponse =
   | {
@@ -69,6 +76,27 @@ const readRsvpResponse = async (response: Response) => {
   }
 };
 
+const validateFullNameInput = (input: HTMLInputElement) => {
+  const validation = validateGuestFullNameFormat(input.value);
+  input.setCustomValidity(validation.isValid ? '' : validation.message);
+};
+
+const formatFullNameInput = (input: HTMLInputElement) => {
+  const formattedValue = formatGuestFullName(input.value);
+
+  if (input.value !== formattedValue) {
+    input.value = formattedValue;
+  }
+
+  validateFullNameInput(input);
+};
+
+const prepareFullNameInputs = (form: HTMLFormElement) => {
+  form
+    .querySelectorAll<HTMLInputElement>('[data-full-name-input="true"]')
+    .forEach(formatFullNameInput);
+};
+
 function FieldError({ id, messages }: { id: string; messages?: string[] }) {
   if (!messages?.length) {
     return null;
@@ -82,18 +110,44 @@ function FieldError({ id, messages }: { id: string; messages?: string[] }) {
 }
 
 export function GuestSurveySection() {
-  const [selectedPlusOne, setSelectedPlusOne] = useState<
-    'true' | 'false' | null
-  >(null);
+  const [selectedAttendance, setSelectedAttendance] =
+    useState<BooleanRadioValue | null>(null);
+  const [selectedPlusOne, setSelectedPlusOne] =
+    useState<BooleanRadioValue | null>(null);
   const [submitState, setSubmitState] =
     useState<SubmitState>(initialSubmitState);
   const isLoading = submitState.status === 'loading';
-  const plusOneNameDisabled = selectedPlusOne !== 'true';
+  const attendingFieldsVisible = selectedAttendance === 'true';
+  const plusOneNameDisabled =
+    !attendingFieldsVisible || selectedPlusOne !== 'true';
 
   const clearResultState = () => {
     if (submitState.status === 'error' || submitState.status === 'success') {
       setSubmitState(initialSubmitState);
     }
+  };
+
+  const handleAttendanceChange = (value: BooleanRadioValue) => {
+    setSelectedAttendance(value);
+
+    if (value === 'false') {
+      setSelectedPlusOne(null);
+    }
+  };
+
+  const handleFullNameInput = (event: FormEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const sanitizedValue = sanitizeGuestFullNameInput(input.value);
+
+    if (input.value !== sanitizedValue) {
+      input.value = sanitizedValue;
+    }
+
+    validateFullNameInput(input);
+  };
+
+  const handleFullNameBlur = (event: FocusEvent<HTMLInputElement>) => {
+    formatFullNameInput(event.currentTarget);
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -104,6 +158,7 @@ export function GuestSurveySection() {
     }
 
     const form = event.currentTarget;
+    prepareFullNameInputs(form);
 
     if (!form.checkValidity()) {
       form.reportValidity();
@@ -111,7 +166,8 @@ export function GuestSurveySection() {
     }
 
     const formData = new FormData(form);
-    const hasPlusOne = formData.get('hasPlusOne') === 'true';
+    const isAttending = formData.get('isAttending') === 'true';
+    const hasPlusOne = isAttending && formData.get('hasPlusOne') === 'true';
 
     setSubmitState({
       message: 'Сохраняем ответ...',
@@ -122,10 +178,14 @@ export function GuestSurveySection() {
       const response = await fetch('/api/rsvp', {
         body: JSON.stringify({
           guestName: getFormString(formData, 'guestName'),
-          guestComment: getOptionalFormString(formData, 'guestComment'),
+          guestComment: isAttending
+            ? getOptionalFormString(formData, 'guestComment')
+            : null,
           hasPlusOne,
-          isAttending: formData.get('isAttending') === 'true',
-          needsTransfer: formData.get('needsTransfer') === 'true',
+          isAttending,
+          needsTransfer: isAttending
+            ? formData.get('needsTransfer') === 'true'
+            : false,
           plusOneName: hasPlusOne
             ? getOptionalFormString(formData, 'plusOneName')
             : null,
@@ -152,6 +212,7 @@ export function GuestSurveySection() {
       }
 
       form.reset();
+      setSelectedAttendance(null);
       setSelectedPlusOne(null);
       setSubmitState({
         message: 'Ответ сохранен. Спасибо!',
@@ -178,7 +239,11 @@ export function GuestSurveySection() {
         className="space-y-4 border border-[#7f9db9] bg-white p-4 shadow-[inset_1px_1px_0_white] md:p-5"
         data-testid="rsvp-form"
         onChange={clearResultState}
-        onReset={() => {
+        onReset={(event) => {
+          event.currentTarget
+            .querySelectorAll<HTMLInputElement>('[data-full-name-input="true"]')
+            .forEach((input) => input.setCustomValidity(''));
+          setSelectedAttendance(null);
           setSelectedPlusOne(null);
           setSubmitState(initialSubmitState);
         }}
@@ -199,9 +264,12 @@ export function GuestSurveySection() {
             aria-describedby="guest-full-name-error"
             aria-invalid={Boolean(submitState.fields?.guestName)}
             className={fieldClassName}
+            data-full-name-input="true"
             id="guest-full-name"
             maxLength={120}
             name="guestName"
+            onBlur={handleFullNameBlur}
+            onInput={handleFullNameInput}
             placeholder="Например: Иван Иванов"
             required
           />
@@ -216,21 +284,29 @@ export function GuestSurveySection() {
             Будете ли вы присутствовать?
           </label>
           <div className="grid gap-2 text-sm sm:grid-cols-2">
-            {invitationContent.surveyOptions.map((option, index) => (
-              <label
-                key={option.label}
-                className="flex cursor-pointer items-center gap-2 border border-[#d0d0d0] bg-[#fafafa] px-3 py-2"
-              >
-                <input
-                  className="accent-black"
-                  name="isAttending"
-                  required
-                  type="radio"
-                  value={index === 0 ? 'true' : 'false'}
-                />
-                <span>{option.label}</span>
-              </label>
-            ))}
+            {invitationContent.surveyOptions.map((option, index) => {
+              const value = (
+                index === 0 ? 'true' : 'false'
+              ) as BooleanRadioValue;
+
+              return (
+                <label
+                  key={option.label}
+                  className="flex cursor-pointer items-center gap-2 border border-[#d0d0d0] bg-[#fafafa] px-3 py-2"
+                >
+                  <input
+                    checked={selectedAttendance === value}
+                    className="accent-black"
+                    name="isAttending"
+                    onChange={() => handleAttendanceChange(value)}
+                    required
+                    type="radio"
+                    value={value}
+                  />
+                  <span>{option.label}</span>
+                </label>
+              );
+            })}
           </div>
           <FieldError
             id="is-attending-error"
@@ -238,105 +314,115 @@ export function GuestSurveySection() {
           />
         </div>
 
-        <div>
-          <label className="mb-2 block text-sm font-bold">
-            Будете ли вы с парой?
-          </label>
-          <div className="grid gap-2 text-sm sm:grid-cols-2">
-            {plusOneOptions.map((option) => (
-              <label
-                key={option.value}
-                className="flex cursor-pointer items-center gap-2 border border-[#d0d0d0] bg-[#fafafa] px-3 py-2"
-              >
-                <input
-                  checked={selectedPlusOne === option.value}
-                  className="accent-black"
-                  name="hasPlusOne"
-                  onChange={() => setSelectedPlusOne(option.value)}
-                  required
-                  type="radio"
-                  value={option.value}
-                />
-                <span>{option.label}</span>
+        {attendingFieldsVisible ? (
+          <>
+            <div>
+              <label className="mb-2 block text-sm font-bold">
+                Будете ли вы с парой?
               </label>
-            ))}
-          </div>
-          <FieldError
-            id="has-plus-one-error"
-            messages={submitState.fields?.hasPlusOne}
-          />
-        </div>
+              <div className="grid gap-2 text-sm sm:grid-cols-2">
+                {plusOneOptions.map((option) => (
+                  <label
+                    key={option.value}
+                    className="flex cursor-pointer items-center gap-2 border border-[#d0d0d0] bg-[#fafafa] px-3 py-2"
+                  >
+                    <input
+                      checked={selectedPlusOne === option.value}
+                      className="accent-black"
+                      name="hasPlusOne"
+                      onChange={() => setSelectedPlusOne(option.value)}
+                      required
+                      type="radio"
+                      value={option.value}
+                    />
+                    <span>{option.label}</span>
+                  </label>
+                ))}
+              </div>
+              <FieldError
+                id="has-plus-one-error"
+                messages={submitState.fields?.hasPlusOne}
+              />
+            </div>
 
-        <div>
-          <label
-            className="mb-1 block text-sm font-bold"
-            htmlFor="plus-one-name"
-          >
-            Имя Фамилия пары
-          </label>
-          <input
-            aria-describedby="plus-one-name-error"
-            aria-invalid={Boolean(submitState.fields?.plusOneName)}
-            className={fieldClassName}
-            disabled={plusOneNameDisabled}
-            id="plus-one-name"
-            maxLength={120}
-            name="plusOneName"
-            placeholder="Заполните, если будете с +1"
-            required={!plusOneNameDisabled}
-          />
-          <FieldError
-            id="plus-one-name-error"
-            messages={submitState.fields?.plusOneName}
-          />
-        </div>
-
-        <div>
-          <label className="mb-2 block text-sm font-bold">
-            Нужен ли вам трансфер после банкета?
-          </label>
-          <div className="grid gap-2 text-sm sm:grid-cols-2">
-            {transferOptions.map((option) => (
+            <div>
               <label
-                key={option.value}
-                className="flex cursor-pointer items-center gap-2 border border-[#d0d0d0] bg-[#fafafa] px-3 py-2"
+                className="mb-1 block text-sm font-bold"
+                htmlFor="plus-one-name"
               >
-                <input
-                  className="accent-black"
-                  name="needsTransfer"
-                  required
-                  type="radio"
-                  value={option.value}
-                />
-                <span>{option.label}</span>
+                Имя Фамилия пары
               </label>
-            ))}
-          </div>
-          <FieldError
-            id="needs-transfer-error"
-            messages={submitState.fields?.needsTransfer}
-          />
-        </div>
+              <input
+                aria-describedby="plus-one-name-error"
+                aria-invalid={Boolean(submitState.fields?.plusOneName)}
+                className={fieldClassName}
+                data-full-name-input="true"
+                disabled={plusOneNameDisabled}
+                id="plus-one-name"
+                maxLength={120}
+                name="plusOneName"
+                onBlur={handleFullNameBlur}
+                onInput={handleFullNameInput}
+                placeholder="Заполните, если будете с +1"
+                required={!plusOneNameDisabled}
+              />
+              <FieldError
+                id="plus-one-name-error"
+                messages={submitState.fields?.plusOneName}
+              />
+            </div>
 
-        <div>
-          <label className="mb-1 block text-sm font-bold" htmlFor="guest-note">
-            Комментарий гостя
-          </label>
-          <textarea
-            aria-describedby="guest-note-error"
-            aria-invalid={Boolean(submitState.fields?.guestComment)}
-            className={fieldClassName}
-            id="guest-note"
-            maxLength={1000}
-            name="guestComment"
-            placeholder="Аллергия, пожелания или другая важная информация"
-            rows={4}
-          />
-          <FieldError
-            id="guest-note-error"
-            messages={submitState.fields?.guestComment}
-          />
-        </div>
+            <div>
+              <label className="mb-2 block text-sm font-bold">
+                Нужен ли вам трансфер после банкета?
+              </label>
+              <div className="grid gap-2 text-sm sm:grid-cols-2">
+                {transferOptions.map((option) => (
+                  <label
+                    key={option.value}
+                    className="flex cursor-pointer items-center gap-2 border border-[#d0d0d0] bg-[#fafafa] px-3 py-2"
+                  >
+                    <input
+                      className="accent-black"
+                      name="needsTransfer"
+                      required
+                      type="radio"
+                      value={option.value}
+                    />
+                    <span>{option.label}</span>
+                  </label>
+                ))}
+              </div>
+              <FieldError
+                id="needs-transfer-error"
+                messages={submitState.fields?.needsTransfer}
+              />
+            </div>
+
+            <div>
+              <label
+                className="mb-1 block text-sm font-bold"
+                htmlFor="guest-note"
+              >
+                Комментарий гостя
+              </label>
+              <textarea
+                aria-describedby="guest-note-error"
+                aria-invalid={Boolean(submitState.fields?.guestComment)}
+                className={fieldClassName}
+                id="guest-note"
+                maxLength={1000}
+                name="guestComment"
+                placeholder="Аллергия, пожелания или другая важная информация"
+                rows={4}
+              />
+              <FieldError
+                id="guest-note-error"
+                messages={submitState.fields?.guestComment}
+              />
+            </div>
+          </>
+        ) : null}
 
         {submitState.message ? (
           <p
