@@ -10,22 +10,27 @@ const wizardSteps = [
   {
     active: true,
     index: '01',
+    targetId: 'invite',
     title: 'Событие',
   },
   {
     index: '02',
+    targetId: 'details',
     title: 'Дата и место',
   },
   {
     index: '03',
+    targetId: 'dress-code',
     title: 'Дресс-код',
   },
   {
     index: '04',
+    targetId: 'program',
     title: 'Программа вечера',
   },
   {
     index: '05',
+    targetId: 'survey',
     title: 'Опрос гостей',
   },
 ] as const;

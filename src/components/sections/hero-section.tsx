@@ -5,7 +5,7 @@ export function HeroSection() {
   return (
     <section
       id="invite"
-      className="border border-[#7f9db9] bg-white shadow-[inset_1px_1px_0_white]"
+      className="section-anchor border border-[#7f9db9] bg-white shadow-[inset_1px_1px_0_white]"
     >
       <div className="border-b border-[#c7c7c7] bg-gradient-to-r from-white to-[#f3f7ff] px-4 py-3">
         <div className="mb-1 text-xs uppercase tracking-wide text-[#4b4b4b]">
