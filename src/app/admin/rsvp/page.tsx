@@ -1,6 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 
 import type { Metadata } from 'next';
+import { revalidatePath } from 'next/cache';
 import Link from 'next/link';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
@@ -69,6 +70,11 @@ function getSortOrder(searchParams: SearchParams): SortOrder {
   return getSingleParam(searchParams.sort) === 'asc' ? 'asc' : 'desc';
 }
 
+function getSortOrderFromFormData(formData: FormData): SortOrder {
+  const sort = formData.get('sort');
+  return sort === 'asc' ? 'asc' : 'desc';
+}
+
 function formatDateTime(value: Date) {
   return new Intl.DateTimeFormat('ru-RU', {
     dateStyle: 'short',
@@ -86,6 +92,14 @@ function getAttendanceText(value: boolean) {
 
 function getBooleanText(value: boolean) {
   return value ? 'Да' : 'Нет';
+}
+
+function getAdminErrorText(error: string | undefined) {
+  if (error === 'delete_failed') {
+    return 'Не удалось удалить RSVP-ответ. Проверьте подключение к SQLite и попробуйте еще раз.';
+  }
+
+  return null;
 }
 
 async function isAdminAuthenticated() {
@@ -163,6 +177,37 @@ async function logoutFromRsvpAdmin() {
   });
 
   redirect('/admin/rsvp');
+}
+
+async function deleteRsvpRow(formData: FormData) {
+  'use server';
+
+  const sortOrder = getSortOrderFromFormData(formData);
+
+  if (!(await isAdminAuthenticated())) {
+    redirect('/admin/rsvp');
+  }
+
+  const rsvpId = Number(formData.get('rsvpId'));
+
+  if (!Number.isSafeInteger(rsvpId) || rsvpId <= 0) {
+    redirect(`/admin/rsvp?sort=${sortOrder}`);
+  }
+
+  const prisma = getPrismaClient();
+
+  try {
+    await prisma.rsvp.deleteMany({
+      where: {
+        id: rsvpId,
+      },
+    });
+  } catch {
+    redirect(`/admin/rsvp?sort=${sortOrder}&error=delete_failed`);
+  }
+
+  revalidatePath('/admin/rsvp');
+  redirect(`/admin/rsvp?sort=${sortOrder}`);
 }
 
 function AdminWindow({ children }: { children: ReactNode }) {
@@ -277,6 +322,30 @@ function StatusBadge({
     >
       {children}
     </span>
+  );
+}
+
+function DeleteRsvpForm({
+  guestName,
+  rowId,
+  sortOrder,
+}: {
+  guestName: string;
+  rowId: number;
+  sortOrder: SortOrder;
+}) {
+  return (
+    <form action={deleteRsvpRow}>
+      <input name="rsvpId" type="hidden" value={rowId} />
+      <input name="sort" type="hidden" value={sortOrder} />
+      <button
+        aria-label={`Удалить RSVP-ответ: ${guestName}`}
+        className="min-h-10 w-full rounded-[3px] border border-t-white border-l-white border-r-[#404040] border-b-[#404040] bg-[#fff1f1] px-3 py-2 text-sm font-bold text-[#a00000] lg:w-auto"
+        type="submit"
+      >
+        Удалить
+      </button>
+    </form>
   );
 }
 
@@ -410,7 +479,13 @@ function TableCell({
   );
 }
 
-function RsvpTable({ rows }: { rows: RsvpRow[] }) {
+function RsvpTable({
+  rows,
+  sortOrder,
+}: {
+  rows: RsvpRow[];
+  sortOrder: SortOrder;
+}) {
   if (rows.length === 0) {
     return (
       <div className="border border-[#7f9db9] bg-white p-4 text-sm">
@@ -442,7 +517,10 @@ function RsvpTable({ rows }: { rows: RsvpRow[] }) {
           <th className="border-b border-r border-[#808080] px-3 py-2">
             Отправлено
           </th>
-          <th className="border-b border-[#808080] px-3 py-2">Обновлено</th>
+          <th className="border-b border-r border-[#808080] px-3 py-2">
+            Обновлено
+          </th>
+          <th className="border-b border-[#808080] px-3 py-2">Действия</th>
         </tr>
       </thead>
       <tbody className="block lg:table-row-group">
@@ -487,6 +565,13 @@ function RsvpTable({ rows }: { rows: RsvpRow[] }) {
                 {formatDateTime(row.updatedAt)}
               </time>
             </TableCell>
+            <TableCell label="Действия">
+              <DeleteRsvpForm
+                guestName={row.guestName}
+                rowId={row.id}
+                sortOrder={sortOrder}
+              />
+            </TableCell>
           </tr>
         ))}
       </tbody>
@@ -501,6 +586,7 @@ export default async function AdminRsvpPage({
   const password = getAdminPassword();
   const sortOrder = getSortOrder(resolvedSearchParams);
   const error = getSingleParam(resolvedSearchParams.error);
+  const adminErrorText = getAdminErrorText(error);
   const refreshHref = `/admin/rsvp?sort=${sortOrder}&refresh=${Date.now()}`;
 
   if (!password) {
@@ -536,6 +622,14 @@ export default async function AdminRsvpPage({
       <div className="space-y-4">
         <XpPanel title="Сводка RSVP">
           <div className="space-y-4">
+            {adminErrorText ? (
+              <p
+                className="border border-[#a00000] bg-[#fff1f1] px-3 py-2 text-sm font-bold text-[#a00000]"
+                role="alert"
+              >
+                {adminErrorText}
+              </p>
+            ) : null}
             <RsvpSummary rows={rows} />
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex flex-wrap gap-2">
@@ -560,7 +654,7 @@ export default async function AdminRsvpPage({
         </XpPanel>
 
         <XpPanel title="Ответы гостей">
-          <RsvpTable rows={rows} />
+          <RsvpTable rows={rows} sortOrder={sortOrder} />
         </XpPanel>
       </div>
     </AdminWindow>
