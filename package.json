@@ -5,8 +5,11 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build --webpack",
+    "prod:build": "npm run db:deploy && npm run build && npm run standalone:copy-assets",
+    "prod:start": "node .next/standalone/server.js",
     "postinstall": "prisma generate",
     "start": "next start",
+    "standalone:copy-assets": "mkdir -p .next/standalone/.next/static && cp -R .next/static/. .next/standalone/.next/static/ && if [ -d public ]; then mkdir -p .next/standalone/public && cp -R public/. .next/standalone/public/; fi",
     "typecheck": "tsc --noEmit",
     "db:generate": "prisma generate",
     "db:prepare": "node scripts/ensure-sqlite-db.mjs",
