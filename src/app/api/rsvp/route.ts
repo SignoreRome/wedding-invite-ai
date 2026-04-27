@@ -9,6 +9,11 @@ const GUEST_NAME_MAX_LENGTH = 120;
 const PLUS_ONE_NAME_MAX_LENGTH = 120;
 const GUEST_COMMENT_MAX_LENGTH = 1000;
 
+const normalizeGuestName = (value: string) =>
+  value.trim().replace(/\s+/g, ' ');
+const getGuestNameLookupKey = (value: string) =>
+  normalizeGuestName(value).toLocaleLowerCase('ru-RU');
+
 const optionalTrimmedString = (maxLength: number) =>
   z
     .union([z.string().trim().max(maxLength), z.null()])
@@ -30,7 +35,8 @@ const rsvpRequestSchema = z
       .max(
         GUEST_NAME_MAX_LENGTH,
         `Имя гостя должно быть не длиннее ${GUEST_NAME_MAX_LENGTH} символов`,
-      ),
+      )
+      .transform(normalizeGuestName),
     isAttending: z.boolean(),
     hasPlusOne: z.boolean().default(false),
     plusOneName: optionalTrimmedString(PLUS_ONE_NAME_MAX_LENGTH),
@@ -89,6 +95,17 @@ const formatZodError = (error: ZodError<RsvpRequest>) => {
   return fields;
 };
 
+const rsvpSelect = {
+  createdAt: true,
+  guestComment: true,
+  guestName: true,
+  hasPlusOne: true,
+  id: true,
+  isAttending: true,
+  needsTransfer: true,
+  plusOneName: true,
+} as const;
+
 export async function POST(request: Request) {
   let requestBody: unknown;
 
@@ -127,37 +144,72 @@ export async function POST(request: Request) {
 
   try {
     const prisma = getPrismaClient();
+    const rsvpData = {
+      guestComment: rsvp.guestComment,
+      guestName: rsvp.guestName,
+      hasPlusOne: rsvp.hasPlusOne,
+      isAttending: rsvp.isAttending,
+      needsTransfer: rsvp.needsTransfer,
+      plusOneName: rsvp.hasPlusOne ? rsvp.plusOneName : null,
+    };
+    const guestNameLookupKey = getGuestNameLookupKey(rsvp.guestName);
 
-    const createdRsvp = await prisma.rsvp.create({
-      data: {
-        guestName: rsvp.guestName,
-        isAttending: rsvp.isAttending,
-        hasPlusOne: rsvp.hasPlusOne,
-        plusOneName: rsvp.hasPlusOne ? rsvp.plusOneName : null,
-        needsTransfer: rsvp.needsTransfer,
-        guestComment: rsvp.guestComment,
-      },
-      select: {
-        id: true,
-        guestName: true,
-        isAttending: true,
-        hasPlusOne: true,
-        plusOneName: true,
-        needsTransfer: true,
-        guestComment: true,
-        createdAt: true,
-      },
+    const savedRsvp = await prisma.$transaction(async (tx) => {
+      const existingRsvp = (
+        await tx.rsvp.findMany({
+          orderBy: [
+            {
+              updatedAt: 'desc',
+            },
+            {
+              id: 'desc',
+            },
+          ],
+          select: {
+            guestName: true,
+            id: true,
+          },
+        })
+      ).find(
+        (rsvpRow) =>
+          getGuestNameLookupKey(rsvpRow.guestName) === guestNameLookupKey,
+      );
+
+      if (existingRsvp) {
+        const record = await tx.rsvp.update({
+          data: rsvpData,
+          select: rsvpSelect,
+          where: {
+            id: existingRsvp.id,
+          },
+        });
+
+        return {
+          record,
+          status: 200,
+        };
+      }
+
+      const record = await tx.rsvp.create({
+        data: rsvpData,
+        select: rsvpSelect,
+      });
+
+      return {
+        record,
+        status: 201,
+      };
     });
 
     return jsonResponse(
       {
         ok: true,
         data: {
-          ...createdRsvp,
-          createdAt: createdRsvp.createdAt.toISOString(),
+          ...savedRsvp.record,
+          createdAt: savedRsvp.record.createdAt.toISOString(),
         },
       },
-      201,
+      savedRsvp.status,
     );
   } catch {
     return jsonResponse(
