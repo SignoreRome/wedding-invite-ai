@@ -3,7 +3,7 @@ import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import type { Metadata } from 'next';
 import { revalidatePath } from 'next/cache';
 import Link from 'next/link';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 
@@ -46,6 +46,79 @@ type RsvpRow = {
 
 function getAdminPassword() {
   return process.env.ADMIN_RSVP_PASSWORD || null;
+}
+
+function parseBooleanEnv(value: string | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const normalizedValue = value.trim().toLowerCase();
+
+  if (['1', 'true', 'yes'].includes(normalizedValue)) {
+    return true;
+  }
+
+  if (['0', 'false', 'no'].includes(normalizedValue)) {
+    return false;
+  }
+
+  return null;
+}
+
+function getUrlProtocol(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    return new URL(value).protocol.replace(':', '');
+  } catch {
+    return null;
+  }
+}
+
+function getRequestProtocol(requestHeaders: Headers) {
+  const forwardedProto = requestHeaders
+    .get('x-forwarded-proto')
+    ?.split(',')[0]
+    ?.trim()
+    .toLowerCase();
+
+  if (forwardedProto === 'http' || forwardedProto === 'https') {
+    return forwardedProto;
+  }
+
+  if (requestHeaders.get('x-forwarded-ssl')?.trim().toLowerCase() === 'on') {
+    return 'https';
+  }
+
+  return (
+    getUrlProtocol(requestHeaders.get('origin')) ??
+    getUrlProtocol(requestHeaders.get('referer'))
+  );
+}
+
+async function shouldUseSecureAdminCookie() {
+  const configuredValue = parseBooleanEnv(process.env.ADMIN_RSVP_COOKIE_SECURE);
+
+  if (configuredValue !== null) {
+    return configuredValue;
+  }
+
+  const requestProtocol = getRequestProtocol(await headers());
+
+  if (requestProtocol) {
+    return requestProtocol === 'https';
+  }
+
+  const siteProtocol = getUrlProtocol(process.env.NEXT_PUBLIC_SITE_URL);
+
+  if (siteProtocol) {
+    return siteProtocol === 'https';
+  }
+
+  return process.env.NODE_ENV === 'production';
 }
 
 function hashValue(value: string) {
@@ -161,7 +234,7 @@ async function loginToRsvpAdmin(formData: FormData) {
     maxAge: ADMIN_SESSION_MAX_AGE,
     path: '/admin',
     sameSite: 'strict',
-    secure: process.env.NODE_ENV === 'production',
+    secure: await shouldUseSecureAdminCookie(),
   });
 
   redirect('/admin/rsvp');
