@@ -8,6 +8,7 @@ import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 
 import { getPrismaClient } from '@/lib/prisma';
+import { formatGuestFullName } from '@/lib/rsvp-name';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -41,8 +42,12 @@ type RsvpRow = {
   isAttending: boolean;
   needsTransfer: boolean;
   plusOneName: string | null;
+  rsvpInfo: string | null;
   updatedAt: Date;
 };
+
+const getGuestNameLookupKey = (value: string) =>
+  formatGuestFullName(value).toLocaleLowerCase('ru-RU');
 
 function getAdminPassword() {
   return process.env.ADMIN_RSVP_PASSWORD || null;
@@ -206,6 +211,7 @@ async function getRsvpRows(sortOrder: SortOrder) {
       isAttending: true,
       needsTransfer: true,
       plusOneName: true,
+      rsvpInfo: true,
       updatedAt: true,
     },
   });
@@ -509,10 +515,17 @@ function RsvpLoadErrorPanel() {
 
 function RsvpSummary({ rows }: { rows: RsvpRow[] }) {
   const attendingResponses = rows.filter((row) => row.isAttending);
-  const attendingGuestCount = attendingResponses.reduce(
-    (total, row) => total + 1 + (row.hasPlusOne ? 1 : 0),
-    0,
+  const attendingNameLookupKeys = new Set(
+    attendingResponses.map((row) => getGuestNameLookupKey(row.guestName)),
   );
+  const attendingPlusOneWithoutOwnRowCount = attendingResponses.filter(
+    (row) =>
+      row.hasPlusOne &&
+      row.plusOneName &&
+      !attendingNameLookupKeys.has(getGuestNameLookupKey(row.plusOneName)),
+  ).length;
+  const attendingGuestCount =
+    attendingResponses.length + attendingPlusOneWithoutOwnRowCount;
   const transferCount = attendingResponses.filter(
     (row) => row.needsTransfer,
   ).length;
@@ -575,6 +588,9 @@ function RsvpTable({
             Имя гостя
           </th>
           <th className="border-b border-r border-[#808080] px-3 py-2">
+            RSVP info
+          </th>
+          <th className="border-b border-r border-[#808080] px-3 py-2">
             Присутствие
           </th>
           <th className="border-b border-r border-[#808080] px-3 py-2">+1</th>
@@ -604,6 +620,11 @@ function RsvpTable({
           >
             <TableCell label="Имя гостя">
               <strong>{row.guestName}</strong>
+            </TableCell>
+            <TableCell label="RSVP info">
+              <span className="whitespace-pre-wrap">
+                {formatOptionalText(row.rsvpInfo)}
+              </span>
             </TableCell>
             <TableCell label="Присутствие">
               <StatusBadge tone={row.isAttending ? 'success' : 'danger'}>
