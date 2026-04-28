@@ -15,6 +15,8 @@ const GUEST_COMMENT_MAX_LENGTH = 1000;
 const getGuestNameLookupKey = (value: string) =>
   formatGuestFullName(value).toLocaleLowerCase('ru-RU');
 
+const createPlusOneRsvpInfo = (guestName: string) => `(+1 ${guestName})`;
+
 const optionalTrimmedString = (maxLength: number) =>
   z
     .union([z.string().trim().max(maxLength), z.null()])
@@ -94,6 +96,20 @@ const rsvpRequestSchema = z.preprocess(
           path: ['plusOneName'],
         });
       }
+
+      if (
+        value.isAttending &&
+        value.hasPlusOne &&
+        value.plusOneName &&
+        getGuestNameLookupKey(value.guestName) ===
+          getGuestNameLookupKey(value.plusOneName)
+      ) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Имя пары должно отличаться от имени гостя',
+          path: ['plusOneName'],
+        });
+      }
     }),
 );
 
@@ -110,6 +126,10 @@ type RsvpResponseData = {
   createdAt: string;
 };
 
+type SavedRsvpRecord = Omit<RsvpResponseData, 'createdAt'> & {
+  createdAt: Date;
+};
+
 type RsvpPostResponse =
   | {
       ok: true;
@@ -123,6 +143,11 @@ type RsvpPostResponse =
         fields?: Record<string, string[]>;
       };
     };
+
+type RsvpLookupRow = {
+  guestName: string;
+  id: number;
+};
 
 const jsonResponse = (body: RsvpPostResponse, status: number) =>
   NextResponse.json<RsvpPostResponse>(body, { status });
@@ -148,6 +173,14 @@ const rsvpSelect = {
   needsTransfer: true,
   plusOneName: true,
 } as const;
+
+const findRsvpByGuestNameLookupKey = (
+  rows: RsvpLookupRow[],
+  lookupKey: string,
+) =>
+  rows.find(
+    (rsvpRow) => getGuestNameLookupKey(rsvpRow.guestName) === lookupKey,
+  );
 
 export async function POST(request: Request) {
   let requestBody: unknown;
@@ -199,25 +232,28 @@ export async function POST(request: Request) {
     const guestNameLookupKey = getGuestNameLookupKey(rsvp.guestName);
 
     const savedRsvp = await prisma.$transaction(async (tx) => {
-      const existingRsvp = (
-        await tx.rsvp.findMany({
-          orderBy: [
-            {
-              updatedAt: 'desc',
-            },
-            {
-              id: 'desc',
-            },
-          ],
-          select: {
-            guestName: true,
-            id: true,
+      const existingRows = await tx.rsvp.findMany({
+        orderBy: [
+          {
+            updatedAt: 'desc',
           },
-        })
-      ).find(
-        (rsvpRow) =>
-          getGuestNameLookupKey(rsvpRow.guestName) === guestNameLookupKey,
+          {
+            id: 'desc',
+          },
+        ],
+        select: {
+          guestName: true,
+          id: true,
+        },
+      });
+      const existingRsvp = findRsvpByGuestNameLookupKey(
+        existingRows,
+        guestNameLookupKey,
       );
+      let savedRecord: {
+        record: SavedRsvpRecord;
+        status: 200 | 201;
+      };
 
       if (existingRsvp) {
         const record = await tx.rsvp.update({
@@ -228,21 +264,45 @@ export async function POST(request: Request) {
           },
         });
 
-        return {
+        savedRecord = {
           record,
           status: 200,
         };
+      } else {
+        const record = await tx.rsvp.create({
+          data: rsvpData,
+          select: rsvpSelect,
+        });
+
+        savedRecord = {
+          record,
+          status: 201,
+        };
       }
 
-      const record = await tx.rsvp.create({
-        data: rsvpData,
-        select: rsvpSelect,
-      });
+      if (rsvp.isAttending && rsvp.hasPlusOne && rsvp.plusOneName) {
+        const plusOneNameLookupKey = getGuestNameLookupKey(rsvp.plusOneName);
+        const existingPlusOneRsvp = findRsvpByGuestNameLookupKey(
+          existingRows,
+          plusOneNameLookupKey,
+        );
 
-      return {
-        record,
-        status: 201,
-      };
+        if (!existingPlusOneRsvp) {
+          await tx.rsvp.create({
+            data: {
+              guestComment: rsvp.guestComment,
+              guestName: rsvp.plusOneName,
+              hasPlusOne: false,
+              isAttending: true,
+              needsTransfer: rsvp.needsTransfer,
+              plusOneName: null,
+              rsvpInfo: createPlusOneRsvpInfo(rsvp.guestName),
+            },
+          });
+        }
+      }
+
+      return savedRecord;
     });
 
     return jsonResponse(

@@ -14,6 +14,7 @@ model Rsvp {
   plusOneName   String?  @map("plus_one_name")
   needsTransfer Boolean  @default(false) @map("needs_transfer")
   guestComment  String?  @map("guest_comment")
+  rsvpInfo      String?  @map("rsvp_info")
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @default(now()) @updatedAt @map("updated_at")
 
