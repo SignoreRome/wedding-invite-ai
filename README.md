@@ -94,6 +94,7 @@ scripts/
 - `DATABASE_URL` — строка подключения SQLite, локальный путь по умолчанию: `file:./data/dev.db`; файл базы лежит в `data/dev.db` в корне проекта
 - `NEXT_PUBLIC_SITE_URL` — публичный URL сайта, используется для метаданных и canonical-ссылок
 - `ADMIN_RSVP_PASSWORD` — пароль для доступа к административной странице `/admin/rsvp`; если переменная не задана, ответы гостей на странице не показываются
+- `ADMIN_RSVP_COOKIE_SECURE` — опциональный override для Secure-флага cookie админской сессии; по умолчанию флаг определяется по `X-Forwarded-Proto`, `Origin`/`Referer` или `NEXT_PUBLIC_SITE_URL`
 - `PORT` — порт Node.js-приложения на VPS; Nginx должен проксировать запросы на этот порт
 
 Для production используйте абсолютный путь к SQLite-файлу, потому что standalone-сервер Next.js запускается из `.next/standalone`:
@@ -102,6 +103,9 @@ scripts/
 DATABASE_URL="file:/var/www/wedding-invite/shared/data/production.db"
 NEXT_PUBLIC_SITE_URL="https://example.com"
 ADMIN_RSVP_PASSWORD="replace-with-long-private-password"
+# Для временного доступа по http://IP:3000 можно поставить false.
+# Для HTTPS оставьте unset или поставьте true.
+# ADMIN_RSVP_COOKIE_SECURE="true"
 PORT=3000
 ```
 
@@ -194,10 +198,14 @@ npm run prod:build
 DATABASE_URL="file:/var/www/wedding-invite/shared/data/production.db"
 NEXT_PUBLIC_SITE_URL="https://example.com"
 ADMIN_RSVP_PASSWORD="replace-with-long-private-password"
+# Для прямого HTTP-доступа вида http://37.18.102.152:3000 задайте:
+# ADMIN_RSVP_COOKIE_SECURE="false"
 PORT=3000
 ```
 
 Не используйте `npm ci --omit=dev` перед сборкой: Prisma CLI и build-инструменты нужны на этапе `npm run prod:build`. Runtime запускается из `.next/standalone`.
+
+Админская страница `/admin/rsvp` хранит вход в httpOnly cookie на 12 часов. Если сайт открыт по HTTPS за Nginx, оставьте `ADMIN_RSVP_COOKIE_SECURE` unset и передавайте `X-Forwarded-Proto`, как в примере ниже. Если во время настройки VPS админка открывается напрямую по `http://IP:3000`, задайте `ADMIN_RSVP_COOKIE_SECURE="false"`, иначе браузер будет отбрасывать Secure-cookie и после обновления или сортировки снова показывать форму ввода пароля.
 
 Пример systemd unit для постоянного запуска процесса:
 
