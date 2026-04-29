@@ -8,7 +8,6 @@ import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 
 import { getPrismaClient } from '@/lib/prisma';
-import { formatGuestFullName } from '@/lib/rsvp-name';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -45,9 +44,6 @@ type RsvpRow = {
   rsvpInfo: string | null;
   updatedAt: Date;
 };
-
-const getGuestNameLookupKey = (value: string) =>
-  formatGuestFullName(value).toLocaleLowerCase('ru-RU');
 
 function getAdminPassword() {
   return process.env.ADMIN_RSVP_PASSWORD || null;
@@ -515,29 +511,14 @@ function RsvpLoadErrorPanel() {
 
 function RsvpSummary({ rows }: { rows: RsvpRow[] }) {
   const attendingResponses = rows.filter((row) => row.isAttending);
-  const attendingNameLookupKeys = new Set(
-    attendingResponses.map((row) => getGuestNameLookupKey(row.guestName)),
-  );
-  const attendingPlusOneWithoutOwnRowCount = attendingResponses.filter(
-    (row) =>
-      row.hasPlusOne &&
-      row.plusOneName &&
-      !attendingNameLookupKeys.has(getGuestNameLookupKey(row.plusOneName)),
-  ).length;
-  const attendingGuestCount =
-    attendingResponses.length + attendingPlusOneWithoutOwnRowCount;
   const transferCount = attendingResponses.filter(
     (row) => row.needsTransfer,
   ).length;
 
   return (
-    <div className="grid gap-3 sm:grid-cols-3">
+    <div className="grid gap-3 sm:grid-cols-2">
       <div className="border border-[#7f9db9] bg-white p-3 shadow-[inset_1px_1px_0_white]">
         <p className="text-xs uppercase text-[#555]">Будут присутствовать</p>
-        <p className="mt-1 text-3xl font-black">{attendingGuestCount}</p>
-      </div>
-      <div className="border border-[#7f9db9] bg-white p-3 shadow-[inset_1px_1px_0_white]">
-        <p className="text-xs uppercase text-[#555]">Ответов «да»</p>
         <p className="mt-1 text-3xl font-black">{attendingResponses.length}</p>
       </div>
       <div className="border border-[#7f9db9] bg-white p-3 shadow-[inset_1px_1px_0_white]">
