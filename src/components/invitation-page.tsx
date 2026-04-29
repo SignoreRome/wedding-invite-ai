@@ -1,3 +1,4 @@
+import { DinoMinigameLauncher } from '@/components/easter-eggs/dino-minigame';
 import { DressCodeSection } from '@/components/sections/dress-code-section';
 import { EveningProgramSection } from '@/components/sections/evening-program-section';
 import { EventDetailsSection } from '@/components/sections/event-details-section';
@@ -61,12 +62,7 @@ export function InvitationPage() {
 
           <footer className="flex flex-col justify-between gap-4 border border-[#7f9db9] bg-[#ece9d8] px-4 py-3 text-sm sm:flex-row sm:items-center">
             <div className="flex min-w-0 items-center gap-2">
-              <button
-                className="rounded-[3px] border border-t-white border-l-white border-r-[#404040] border-b-[#404040] bg-[#d4d0c8] px-4 py-1 font-bold"
-                type="button"
-              >
-                Start
-              </button>
+              <DinoMinigameLauncher />
               <div className="truncate">Wedding Invitation OS</div>
             </div>
 

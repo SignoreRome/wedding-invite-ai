@@ -157,6 +157,12 @@ select {
   background: var(--window-base);
 }
 
+.dino-game-canvas {
+  cursor: pointer;
+  image-rendering: pixelated;
+  touch-action: manipulation;
+}
+
 .section-anchor {
   scroll-margin-top: 1rem;
 }
