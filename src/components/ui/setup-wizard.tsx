@@ -56,12 +56,45 @@ type SetupWizardStepProps = SetupStep & {
 type WindowMode = 'normal' | 'maximized' | 'minimized';
 type DialogMode = 'accessDenied' | 'closeConfirm' | null;
 
+type MenuItem = {
+  alt: string;
+  label: string;
+  photoSrc: string;
+  title: string;
+};
+
 type DesktopShortcut = {
   iconSrc: string;
   label: string;
 };
 
-const menuItems = ['Файл', 'Правка', 'Вид', 'Справка'] as const;
+const menuItems: readonly MenuItem[] = [
+  {
+    alt: 'Кот рядом с клавиатурой',
+    label: 'Файл',
+    photoSrc: '/cat-photos/file-cat.jpg',
+    title: 'Файл - cat.jpg',
+  },
+  {
+    alt: 'Кот спит на кресле',
+    label: 'Правка',
+    photoSrc: '/cat-photos/edit-cat.jpg',
+    title: 'Правка - cat.jpg',
+  },
+  {
+    alt: 'Кот под пледом рядом с человеком',
+    label: 'Вид',
+    photoSrc: '/cat-photos/view-cat.jpg',
+    title: 'Вид - cat.jpg',
+  },
+  {
+    alt: 'Кот лежит на белом постельном белье',
+    label: 'Справка',
+    photoSrc: '/cat-photos/help-cat.jpg',
+    title: 'Справка - cat.jpg',
+  },
+] as const;
+
 const desktopShortcuts: readonly DesktopShortcut[] = [
   { iconSrc: '/desktop-icons/recycle-bin.png', label: 'Корзина' },
   { iconSrc: '/desktop-icons/my-computer.png', label: 'Мой компьютер' },
@@ -108,6 +141,7 @@ export function SetupWizardShell({
   );
   const [windowMode, setWindowMode] = useState<WindowMode>('normal');
   const [dialogMode, setDialogMode] = useState<DialogMode>(null);
+  const [activeMenuPhoto, setActiveMenuPhoto] = useState<MenuItem | null>(null);
   const [showBlueScreen, setShowBlueScreen] = useState(false);
 
   useEffect(() => {
@@ -202,6 +236,7 @@ export function SetupWizardShell({
 
   const handleMinimize = () => {
     setDialogMode(null);
+    setActiveMenuPhoto(null);
     setWindowMode('minimized');
   };
 
@@ -216,6 +251,7 @@ export function SetupWizardShell({
   };
 
   const handleCloseRequest = () => {
+    setActiveMenuPhoto(null);
     setDialogMode('closeConfirm');
   };
 
@@ -281,11 +317,20 @@ export function SetupWizardShell({
           </div>
 
           <div className="border-b border-[#808080] bg-[#ece9d8] px-3 py-1 text-sm">
-            <div className="flex flex-wrap gap-4 text-[#2c2c2c]">
+            <div className="flex flex-wrap gap-1 text-[#2c2c2c] sm:gap-2">
               {menuItems.map((item) => (
-                <span key={item} className="cursor-default hover:underline">
-                  {item}
-                </span>
+                <a
+                  key={item.label}
+                  className="inline-flex min-h-10 items-center border border-transparent px-2 text-left hover:border-t-white hover:border-l-white hover:border-r-[#808080] hover:border-b-[#808080] hover:bg-[#d4d0c8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#0054e3] active:border-t-[#808080] active:border-l-[#808080] active:border-r-white active:border-b-white sm:min-h-7"
+                  href={item.photoSrc}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    setDialogMode(null);
+                    setActiveMenuPhoto(item);
+                  }}
+                >
+                  {item.label}
+                </a>
               ))}
             </div>
           </div>
@@ -383,7 +428,62 @@ export function SetupWizardShell({
           </button>
         </XpDialog>
       ) : null}
+
+      {activeMenuPhoto ? (
+        <CatPhotoDialog
+          alt={activeMenuPhoto.alt}
+          onClose={() => setActiveMenuPhoto(null)}
+          photoSrc={activeMenuPhoto.photoSrc}
+          title={activeMenuPhoto.title}
+        />
+      ) : null}
     </>
+  );
+}
+
+function CatPhotoDialog({
+  alt,
+  onClose,
+  photoSrc,
+  title,
+}: {
+  alt: string;
+  onClose: () => void;
+  photoSrc: string;
+  title: string;
+}) {
+  return (
+    <div
+      aria-label={title}
+      aria-modal="true"
+      className="fixed inset-0 z-40 flex items-center justify-center bg-black/30 px-3 py-4 sm:px-4 sm:py-6"
+      role="dialog"
+    >
+      <div className="flex max-h-[calc(100dvh-2rem)] w-full max-w-3xl flex-col overflow-hidden border-t-2 border-l-2 border-r-2 border-b-2 border-t-white border-l-white border-r-[#404040] border-b-[#404040] bg-[#d4d0c8] shadow-[8px_8px_0_rgba(0,0,0,0.3)]">
+        <div className="flex items-center justify-between gap-3 bg-gradient-to-r from-[#0054e3] via-[#2b7cff] to-[#67a7ff] px-2 py-1.5 text-sm font-bold text-white">
+          <span className="truncate">{title}</span>
+          <button
+            aria-label="Закрыть фотографию"
+            className="flex h-8 w-8 items-center justify-center border border-t-white border-l-white border-r-[#404040] border-b-[#404040] bg-[#d4d0c8] text-lg leading-none text-black active:border-t-[#404040] active:border-l-[#404040] active:border-r-white active:border-b-white sm:h-6 sm:w-6 sm:text-base"
+            onClick={onClose}
+            type="button"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="min-h-0 border-t border-white bg-[#ece9d8] p-2">
+          <div className="max-h-[calc(100dvh-6.5rem)] overflow-auto border border-[#808080] bg-white p-1 shadow-[inset_1px_1px_0_rgba(0,0,0,0.22)]">
+            <img
+              alt={alt}
+              className="mx-auto block h-auto max-h-[calc(100dvh-7.5rem)] w-full object-contain"
+              draggable="false"
+              src={photoSrc}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
