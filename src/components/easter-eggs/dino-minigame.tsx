@@ -16,7 +16,7 @@ import {
   type GameSettings,
 } from '@/lib/dino-game';
 
-type GameStatus = 'idle' | 'running' | 'game-over';
+type GameStatus = 'idle' | 'running' | 'game-over' | 'story-complete';
 
 type Obstacle = {
   height: number;
@@ -58,8 +58,10 @@ type Rect = {
 };
 
 type GameAssets = {
+  dinoDressSprite: HTMLCanvasElement | null;
   dinoRunningSprite: HTMLCanvasElement | null;
   dinoStandingSprite: HTMLCanvasElement | null;
+  heartSprite: HTMLCanvasElement | null;
   obstacleIcons: ReadonlyMap<string, HTMLImageElement>;
   ringSprite: HTMLCanvasElement | null;
 };
@@ -82,6 +84,8 @@ const OBSTACLE_HITBOX_INSET_X = 22;
 const OBSTACLE_HITBOX_TOP_INSET = 22;
 const OBSTACLE_HITBOX_BOTTOM_INSET = 18;
 const RING_SPRITE_SRC = '/ring.png';
+const DRESS_DINO_SPRITE_SRC = '/dino-dress.png';
+const HEART_SPRITE_SRC = '/pixel-heart.png';
 const STANDING_DINO_SPRITE_SRC = '/dino-bride.png';
 const RUNNING_DINO_SPRITE_SRC = '/dino-bride-run.png';
 const STANDING_DINO_SPRITE_CROP = {
@@ -96,13 +100,32 @@ const RUNNING_DINO_SPRITE_CROP = {
   x: 66,
   y: 55,
 } as const;
+const DRESS_DINO_SPRITE_CROP = {
+  height: 380,
+  width: 320,
+  x: 96,
+  y: 52,
+} as const;
 const RING_SPRITE_CROP = {
   height: 310,
   width: 310,
   x: 96,
   y: 100,
 } as const;
+const HEART_SPRITE_CROP = {
+  height: 220,
+  width: 250,
+  x: 132,
+  y: 152,
+} as const;
 const RING_SIZE = 32;
+const DRESS_DINO_WIDTH = DINO_WIDTH;
+const DRESS_DINO_HEIGHT = DINO_HEIGHT;
+const STORY_END_GAP = 24;
+const STORY_END_SPAWN_BUFFER = GAME_WIDTH + 140;
+const HEART_WIDTH = 58;
+const HEART_HEIGHT = 52;
+const STORY_COMPLETE_MESSAGE = 'Встретимся на свадьбе 07/08/26';
 
 const desktopObstacleIconSrcs = [
   '/desktop-icons/recycle-bin.png',
@@ -303,7 +326,7 @@ const createTransparentDinoSprite = (image: HTMLImageElement) => {
   return canvas;
 };
 
-const createTransparentRingSprite = (image: HTMLImageElement) => {
+const createTransparentCheckerSprite = (image: HTMLImageElement) => {
   const canvas = document.createElement('canvas');
   const width = image.naturalWidth;
   const height = image.naturalHeight;
@@ -319,11 +342,55 @@ const createTransparentRingSprite = (image: HTMLImageElement) => {
   context.drawImage(image, 0, 0);
 
   const imageData = context.getImageData(0, 0, width, height);
+  const visitedPixels = new Uint8Array(width * height);
+  const pixelsToCheck: number[] = [];
 
-  for (let offset = 0; offset < imageData.data.length; offset += 4) {
-    if (isCheckerBackgroundPixel(imageData.data, offset)) {
-      imageData.data[offset + 3] = 0;
+  const pushPixel = (x: number, y: number) => {
+    if (x < 0 || x >= width || y < 0 || y >= height) {
+      return;
     }
+
+    const index = y * width + x;
+
+    if (visitedPixels[index] === 0) {
+      pixelsToCheck.push(index);
+    }
+  };
+
+  for (let x = 0; x < width; x += 1) {
+    pushPixel(x, 0);
+    pushPixel(x, height - 1);
+  }
+
+  for (let y = 1; y < height - 1; y += 1) {
+    pushPixel(0, y);
+    pushPixel(width - 1, y);
+  }
+
+  while (pixelsToCheck.length > 0) {
+    const index = pixelsToCheck.pop();
+
+    if (index === undefined || visitedPixels[index] === 1) {
+      continue;
+    }
+
+    visitedPixels[index] = 1;
+
+    const offset = index * 4;
+
+    if (!isCheckerBackgroundPixel(imageData.data, offset)) {
+      continue;
+    }
+
+    imageData.data[offset + 3] = 0;
+
+    const x = index % width;
+    const y = Math.floor(index / width);
+
+    pushPixel(x + 1, y);
+    pushPixel(x - 1, y);
+    pushPixel(x, y + 1);
+    pushPixel(x, y - 1);
   }
 
   context.putImageData(imageData, 0, 0);
@@ -332,24 +399,34 @@ const createTransparentRingSprite = (image: HTMLImageElement) => {
 };
 
 const loadGameAssets = async (): Promise<GameAssets> => {
-  const [standingDinoImage, runningDinoImage, ringImage, ...obstacleImages] =
-    await Promise.all([
-      loadImage(STANDING_DINO_SPRITE_SRC),
-      loadImage(RUNNING_DINO_SPRITE_SRC),
-      loadImage(RING_SPRITE_SRC),
-      ...desktopObstacleIconSrcs.map((iconSrc) => loadImage(iconSrc)),
-    ]);
+  const [
+    standingDinoImage,
+    runningDinoImage,
+    dressDinoImage,
+    ringImage,
+    heartImage,
+    ...obstacleImages
+  ] = await Promise.all([
+    loadImage(STANDING_DINO_SPRITE_SRC),
+    loadImage(RUNNING_DINO_SPRITE_SRC),
+    loadImage(DRESS_DINO_SPRITE_SRC),
+    loadImage(RING_SPRITE_SRC),
+    loadImage(HEART_SPRITE_SRC),
+    ...desktopObstacleIconSrcs.map((iconSrc) => loadImage(iconSrc)),
+  ]);
 
   return {
+    dinoDressSprite: createTransparentDinoSprite(dressDinoImage),
     dinoRunningSprite: createTransparentDinoSprite(runningDinoImage),
     dinoStandingSprite: createTransparentDinoSprite(standingDinoImage),
+    heartSprite: createTransparentCheckerSprite(heartImage),
     obstacleIcons: new Map(
       desktopObstacleIconSrcs.map((iconSrc, index) => [
         iconSrc,
         obstacleImages[index],
       ]),
     ),
-    ringSprite: createTransparentRingSprite(ringImage),
+    ringSprite: createTransparentCheckerSprite(ringImage),
   };
 };
 const drawFallbackDino = (
@@ -413,6 +490,36 @@ const drawBrideDino = (
   drawFallbackDino(context, x, y + DINO_HEIGHT - 66);
 };
 
+const drawDressDino = (
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  assets: GameAssets,
+) => {
+  context.save();
+  context.translate(Math.round(x) + DRESS_DINO_WIDTH, 0);
+  context.scale(-1, 1);
+
+  if (assets.dinoDressSprite) {
+    context.drawImage(
+      assets.dinoDressSprite,
+      DRESS_DINO_SPRITE_CROP.x,
+      DRESS_DINO_SPRITE_CROP.y,
+      DRESS_DINO_SPRITE_CROP.width,
+      DRESS_DINO_SPRITE_CROP.height,
+      0,
+      Math.round(y),
+      DRESS_DINO_WIDTH,
+      DRESS_DINO_HEIGHT,
+    );
+    context.restore();
+    return;
+  }
+
+  drawFallbackDino(context, 0, y + DINO_HEIGHT - 66);
+  context.restore();
+};
+
 const drawFallbackRing = (context: CanvasRenderingContext2D, ring: Coin) => {
   fillPixel(context, ring.x + 7, ring.y + 2, ring.size - 14, 5, '#ffe66b');
   fillPixel(context, ring.x + 3, ring.y + 8, 7, ring.size - 16, '#ffc928');
@@ -455,6 +562,43 @@ const drawRing = (
   }
 
   drawFallbackRing(context, ring);
+};
+
+const drawFallbackHeart = (
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+) => {
+  fillPixel(context, x + 18, y + 8, 9, 9, '#ff5b7e');
+  fillPixel(context, x + 31, y + 8, 9, 9, '#ff5b7e');
+  fillPixel(context, x + 13, y + 17, 32, 15, '#ff2f5f');
+  fillPixel(context, x + 18, y + 32, 22, 8, '#d80f3f');
+  fillPixel(context, x + 24, y + 40, 10, 7, '#9b0028');
+  fillPixel(context, x + 20, y + 12, 5, 4, '#fff6f8');
+};
+
+const drawHeart = (
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  assets: GameAssets,
+) => {
+  if (assets.heartSprite) {
+    context.drawImage(
+      assets.heartSprite,
+      HEART_SPRITE_CROP.x,
+      HEART_SPRITE_CROP.y,
+      HEART_SPRITE_CROP.width,
+      HEART_SPRITE_CROP.height,
+      Math.round(x),
+      Math.round(y),
+      HEART_WIDTH,
+      HEART_HEIGHT,
+    );
+    return;
+  }
+
+  drawFallbackHeart(context, x, y);
 };
 
 const drawObstacle = (
@@ -521,10 +665,69 @@ const drawObstacle = (
   );
 };
 
+const getStoryDressDinoX = (state: GameState, settings: GameSettings) =>
+  DINO_X +
+  DINO_WIDTH +
+  STORY_END_GAP +
+  Math.max(0, settings.storyRequiredDistance - state.distance);
+
+const drawStoryEnding = (
+  context: CanvasRenderingContext2D,
+  state: GameState,
+  status: GameStatus,
+  mode: GameMode | null,
+  settings: GameSettings,
+  assets: GameAssets,
+) => {
+  if (mode !== 'story') {
+    return;
+  }
+
+  const dressDinoX = getStoryDressDinoX(state, settings);
+
+  if (
+    status !== 'story-complete' &&
+    (dressDinoX > GAME_WIDTH + DRESS_DINO_WIDTH ||
+      dressDinoX < -DRESS_DINO_WIDTH)
+  ) {
+    return;
+  }
+
+  const dinoY = GROUND_Y - DRESS_DINO_HEIGHT;
+
+  drawDressDino(context, dressDinoX, dinoY, assets);
+
+  if (status !== 'story-complete') {
+    return;
+  }
+
+  const gapCenterX = DINO_X + DINO_WIDTH + STORY_END_GAP / 2;
+
+  drawHeart(
+    context,
+    gapCenterX - HEART_WIDTH / 2,
+    dinoY - HEART_HEIGHT + 2,
+    assets,
+  );
+
+  const boxWidth = 440;
+  const boxX = (GAME_WIDTH - boxWidth) / 2;
+
+  fillPixel(context, boxX, 20, boxWidth, 48, '#d4d0c8');
+  fillPixel(context, boxX, 20, boxWidth, 10, '#0054e3');
+  context.fillStyle = '#111111';
+  context.font = '18px "Lucida Console", "Courier New", monospace';
+  context.textAlign = 'center';
+  context.fillText(STORY_COMPLETE_MESSAGE, GAME_WIDTH / 2, 52);
+  context.textAlign = 'left';
+};
+
 const drawScene = (
   context: CanvasRenderingContext2D,
   state: GameState,
   status: GameStatus,
+  mode: GameMode | null,
+  settings: GameSettings,
   assets: GameAssets,
 ) => {
   context.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
@@ -552,17 +755,26 @@ const drawScene = (
     fillPixel(context, x, GROUND_Y + 24, 14, 2, '#b8b2a6');
   }
 
-  state.coins
-    .filter((coin) => !coin.collected)
-    .forEach((coin) => drawRing(context, coin, assets));
-  state.obstacles.forEach((obstacle) =>
-    drawObstacle(context, obstacle, assets),
-  );
+  if (status !== 'story-complete') {
+    state.coins
+      .filter((coin) => !coin.collected)
+      .forEach((coin) => drawRing(context, coin, assets));
+    state.obstacles.forEach((obstacle) =>
+      drawObstacle(context, obstacle, assets),
+    );
+  }
   drawBrideDino(context, DINO_X, state.dinoY, state, status, assets);
+  drawStoryEnding(context, state, status, mode, settings, assets);
 
-  context.font = '16px "Lucida Console", "Courier New", monospace';
-  context.fillStyle = '#003399';
-  context.fillText(`SCORE ${state.score.toString().padStart(4, '0')}`, 18, 28);
+  if (mode !== 'story') {
+    context.font = '16px "Lucida Console", "Courier New", monospace';
+    context.fillStyle = '#003399';
+    context.fillText(
+      `SCORE ${state.score.toString().padStart(4, '0')}`,
+      18,
+      28,
+    );
+  }
 
   if (status === 'idle') {
     fillPixel(context, 258, 118, 206, 50, '#d4d0c8');
@@ -578,7 +790,10 @@ const drawScene = (
     context.fillStyle = '#111111';
     context.font = '14px "Lucida Console", "Courier New", monospace';
     context.fillText('Потрачено', 300, 141);
-    context.fillText(`RINGS ${state.coinsCollected}`, 306, 160);
+
+    if (mode !== 'story') {
+      context.fillText(`RINGS ${state.coinsCollected}`, 306, 160);
+    }
   }
 };
 
@@ -640,11 +855,15 @@ const updateGame = (
     state.velocityY = 0;
   }
 
-  if (state.distance >= state.nextObstacleAt) {
+  const canSpawnGameplayEntities =
+    mode !== 'story' ||
+    state.distance + STORY_END_SPAWN_BUFFER < settings.storyRequiredDistance;
+
+  if (canSpawnGameplayEntities && state.distance >= state.nextObstacleAt) {
     spawnObstacle(state);
   }
 
-  if (state.distance >= state.nextCoinAt) {
+  if (canSpawnGameplayEntities && state.distance >= state.nextCoinAt) {
     spawnCoin(state);
   }
 
@@ -692,6 +911,12 @@ const updateGame = (
   );
 };
 
+const isStoryComplete = (
+  state: GameState,
+  mode: GameMode | null,
+  settings: GameSettings,
+) => mode === 'story' && state.distance >= settings.storyRequiredDistance;
+
 export function DinoMinigameLauncher() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRef = useRef<number | null>(null);
@@ -700,8 +925,10 @@ export function DinoMinigameLauncher() {
   const gameSettingsRef = useRef<GameSettings>(DEFAULT_GAME_SETTINGS);
   const selectedModeRef = useRef<GameMode | null>(null);
   const assetsRef = useRef<GameAssets>({
+    dinoDressSprite: null,
     dinoRunningSprite: null,
     dinoStandingSprite: null,
+    heartSprite: null,
     obstacleIcons: new Map(),
     ringSprite: null,
   });
@@ -759,7 +986,14 @@ export function DinoMinigameLauncher() {
         return;
       }
 
-      drawScene(context, gameStateRef.current, nextStatus, assetsRef.current);
+      drawScene(
+        context,
+        gameStateRef.current,
+        nextStatus,
+        selectedModeRef.current,
+        gameSettingsRef.current,
+        assetsRef.current,
+      );
     },
     [],
   );
@@ -799,7 +1033,7 @@ export function DinoMinigameLauncher() {
               : undefined,
         });
 
-        if (statusRef.current !== 'running') {
+        if (statusRef.current === 'idle' || statusRef.current === 'game-over') {
           gameStateRef.current = getInitialGameState(
             gameSettingsRef.current,
             selectedModeRef.current,
@@ -849,28 +1083,51 @@ export function DinoMinigameLauncher() {
 
       lastFrameTimeRef.current = timestamp;
 
+      const state = gameStateRef.current;
+      const currentMode = selectedModeRef.current;
+      const settings = gameSettingsRef.current;
       const hasCollision = updateGame(
         gameStateRef.current,
         deltaTime,
-        selectedModeRef.current,
-        gameSettingsRef.current,
+        currentMode,
+        settings,
       );
+
+      if (isStoryComplete(state, currentMode, settings)) {
+        state.distance = settings.storyRequiredDistance;
+        state.dinoY = GROUND_Y - DINO_HEIGHT;
+        state.velocityY = 0;
+        state.obstacles = [];
+        state.coins = [];
+        state.score = calculateScore(state);
+
+        if (state.score !== publishedScoreRef.current) {
+          publishedScoreRef.current = state.score;
+          setScore(state.score);
+        }
+
+        cancelAnimation();
+        saveGameAttempt('story', state, true);
+        statusRef.current = 'story-complete';
+        setStatus('story-complete');
+        drawCurrentFrame('story-complete');
+        return;
+      }
+
       drawCurrentFrame('running');
 
-      if (gameStateRef.current.score !== publishedScoreRef.current) {
-        publishedScoreRef.current = gameStateRef.current.score;
-        setScore(gameStateRef.current.score);
+      if (state.score !== publishedScoreRef.current) {
+        publishedScoreRef.current = state.score;
+        setScore(state.score);
       }
 
       if (hasCollision) {
-        const currentMode = selectedModeRef.current;
-
         cancelAnimation();
         setBestScore((currentBestScore) =>
-          Math.max(currentBestScore, gameStateRef.current.score),
+          Math.max(currentBestScore, state.score),
         );
         if (currentMode) {
-          saveGameAttempt(currentMode, gameStateRef.current, false);
+          saveGameAttempt(currentMode, state, false);
         }
         statusRef.current = 'game-over';
         setStatus('game-over');
@@ -1006,7 +1263,7 @@ export function DinoMinigameLauncher() {
   const primaryActionLabel =
     status === 'running'
       ? 'Идет игра'
-      : status === 'game-over'
+      : status === 'game-over' || status === 'story-complete'
         ? 'Restart'
         : selectedMode
           ? 'Start game'
@@ -1071,20 +1328,22 @@ export function DinoMinigameLauncher() {
                 ))}
               </div>
 
-              <div className="grid grid-cols-2 gap-2 text-xs font-bold text-[#003399] sm:grid-cols-4">
-                <div className="truncate border border-[#7f9db9] bg-white px-2 py-1 shadow-[inset_1px_1px_0_white]">
-                  Режим: {selectedModeLabel}
+              {selectedMode !== 'story' ? (
+                <div className="grid grid-cols-2 gap-2 text-xs font-bold text-[#003399] sm:grid-cols-4">
+                  <div className="truncate border border-[#7f9db9] bg-white px-2 py-1 shadow-[inset_1px_1px_0_white]">
+                    Режим: {selectedModeLabel}
+                  </div>
+                  <div className="border border-[#7f9db9] bg-white px-2 py-1 shadow-[inset_1px_1px_0_white]">
+                    Score: {score}
+                  </div>
+                  <div className="border border-[#7f9db9] bg-white px-2 py-1 text-center shadow-[inset_1px_1px_0_white]">
+                    Rings: {gameStateRef.current.coinsCollected}
+                  </div>
+                  <div className="border border-[#7f9db9] bg-white px-2 py-1 text-right shadow-[inset_1px_1px_0_white]">
+                    Best: {bestScore}
+                  </div>
                 </div>
-                <div className="border border-[#7f9db9] bg-white px-2 py-1 shadow-[inset_1px_1px_0_white]">
-                  Score: {score}
-                </div>
-                <div className="border border-[#7f9db9] bg-white px-2 py-1 text-center shadow-[inset_1px_1px_0_white]">
-                  Rings: {gameStateRef.current.coinsCollected}
-                </div>
-                <div className="border border-[#7f9db9] bg-white px-2 py-1 text-right shadow-[inset_1px_1px_0_white]">
-                  Best: {bestScore}
-                </div>
-              </div>
+              ) : null}
 
               <div className="border border-[#808080] bg-white p-1 shadow-[inset_1px_1px_0_rgba(0,0,0,0.25)]">
                 <canvas
