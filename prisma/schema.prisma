@@ -20,3 +20,25 @@ model Rsvp {
 
   @@map("rsvp")
 }
+
+model GameAttempt {
+  id             Int      @id @default(autoincrement())
+  mode           String
+  playerName     String?  @map("player_name")
+  score          Int
+  coinsCollected Int      @map("coins_collected")
+  distance       Int
+  isSuccess      Boolean  @default(false) @map("is_success")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@map("game_attempts")
+}
+
+model GameSettings {
+  id                     Int      @id
+  storyRequiredDistance  Int      @default(2500) @map("story_required_distance")
+  endlessSpeedMultiplier Float    @default(1) @map("endless_speed_multiplier")
+  updatedAt              DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("game_settings")
+}
