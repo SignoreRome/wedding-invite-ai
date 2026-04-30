@@ -10,7 +10,7 @@ import { getPrismaClient } from '@/lib/prisma';
 
 export const runtime = 'nodejs';
 
-const PLAYER_NAME_MAX_LENGTH = 80;
+const PLAYER_NAME_MAX_LENGTH = 30;
 const MAX_SCORE = 10_000_000;
 const MAX_COINS_COLLECTED = 100_000;
 const MAX_DISTANCE = 10_000_000;
@@ -55,6 +55,26 @@ type GameAttemptPostResponse =
       };
     };
 
+type GameAttemptsGetResponse =
+  | {
+      ok: true;
+      data: {
+        leaderboard: {
+          createdAt: string;
+          id: number;
+          playerName: string | null;
+          score: number;
+        }[];
+      };
+    }
+  | {
+      ok: false;
+      error: {
+        code: 'internal_error';
+        message: string;
+      };
+    };
+
 const jsonResponse = (body: GameAttemptPostResponse, status: number) =>
   NextResponse.json<GameAttemptPostResponse>(body, { status });
 
@@ -68,6 +88,58 @@ const formatZodError = (error: ZodError<GameAttemptRequest>) => {
 
   return fields;
 };
+
+export async function GET() {
+  try {
+    const prisma = getPrismaClient();
+    const leaderboard = await prisma.gameAttempt.findMany({
+      orderBy: [
+        {
+          score: 'desc',
+        },
+        {
+          createdAt: 'asc',
+        },
+        {
+          id: 'asc',
+        },
+      ],
+      select: {
+        createdAt: true,
+        id: true,
+        playerName: true,
+        score: true,
+      },
+      take: 3,
+      where: {
+        mode: 'endless',
+      },
+    });
+
+    return NextResponse.json<GameAttemptsGetResponse>({
+      ok: true,
+      data: {
+        leaderboard: leaderboard.map((entry) => ({
+          createdAt: entry.createdAt.toISOString(),
+          id: entry.id,
+          playerName: entry.playerName,
+          score: entry.score,
+        })),
+      },
+    });
+  } catch {
+    return NextResponse.json<GameAttemptsGetResponse>(
+      {
+        ok: false,
+        error: {
+          code: 'internal_error',
+          message: 'Не удалось загрузить таблицу лидеров.',
+        },
+      },
+      { status: 500 },
+    );
+  }
+}
 
 export async function POST(request: Request) {
   let requestBody: unknown;

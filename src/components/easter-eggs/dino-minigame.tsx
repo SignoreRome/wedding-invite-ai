@@ -5,18 +5,19 @@ import {
   useEffect,
   useRef,
   useState,
+  type FormEvent,
   type PointerEvent,
 } from 'react';
 
 import {
   DEFAULT_GAME_SETTINGS,
-  GAME_MODE_LABELS,
   normalizeGameSettings,
   type GameMode,
   type GameSettings,
 } from '@/lib/dino-game';
 
 type GameStatus = 'idle' | 'running' | 'game-over' | 'story-complete';
+type GameScreen = 'menu' | 'game';
 
 type Obstacle = {
   height: number;
@@ -48,6 +49,21 @@ type GameState = {
   score: number;
   speed: number;
   velocityY: number;
+};
+
+type GameAttemptPayload = {
+  coinsCollected: number;
+  distance: number;
+  isSuccess: boolean;
+  mode: GameMode;
+  playerName: string | null;
+  score: number;
+};
+
+type LeaderboardEntry = {
+  id: number;
+  playerName: string | null;
+  score: number;
 };
 
 type Rect = {
@@ -126,6 +142,8 @@ const STORY_END_SPAWN_BUFFER = GAME_WIDTH + 140;
 const HEART_WIDTH = 58;
 const HEART_HEIGHT = 52;
 const STORY_COMPLETE_MESSAGE = 'Встретимся на свадьбе 07/08/26';
+const PLAYER_NAME_MAX_LENGTH = 30;
+const GUEST_PLAYER_NAME = 'Гость';
 
 const desktopObstacleIconSrcs = [
   '/desktop-icons/recycle-bin.png',
@@ -146,6 +164,10 @@ const xpButtonClassName =
   'rounded-[3px] border border-t-white border-l-white border-r-[#404040] border-b-[#404040] bg-[#d4d0c8] px-4 py-2 text-sm font-bold text-black shadow-[inset_1px_1px_0_white] active:border-t-[#404040] active:border-l-[#404040] active:border-r-white active:border-b-white disabled:cursor-not-allowed disabled:border-[#808080] disabled:bg-[#c0c0c0] disabled:text-[#606060]';
 
 const gameModes: readonly GameMode[] = ['story', 'endless'];
+const menuModeLabels: Record<GameMode, string> = {
+  endless: 'Рекорд',
+  story: 'Сюжет',
+};
 
 const randomBetween = (min: number, max: number) =>
   min + Math.random() * (max - min);
@@ -205,6 +227,57 @@ const calculateScore = (state: GameState) =>
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+const scoreFormatter = new Intl.NumberFormat('ru-RU');
+
+const formatGameScore = (score: number) => scoreFormatter.format(score);
+
+const getDisplayPlayerName = (playerName: string | null) =>
+  playerName?.trim() || GUEST_PLAYER_NAME;
+
+const parseLeaderboardEntries = (value: unknown): LeaderboardEntry[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((entry) => {
+    if (
+      !isRecord(entry) ||
+      typeof entry.id !== 'number' ||
+      typeof entry.score !== 'number'
+    ) {
+      return [];
+    }
+
+    return [
+      {
+        id: entry.id,
+        playerName:
+          typeof entry.playerName === 'string' ? entry.playerName : null,
+        score: entry.score,
+      },
+    ];
+  });
+};
+
+const doesScoreEnterLeaderboard = (
+  score: number,
+  leaderboard: LeaderboardEntry[],
+) =>
+  leaderboard.length < 3 || score > leaderboard[leaderboard.length - 1].score;
+
+const createGameAttemptPayload = (
+  mode: GameMode,
+  state: GameState,
+  isSuccess: boolean,
+): GameAttemptPayload => ({
+  coinsCollected: state.coinsCollected,
+  distance: Math.round(state.distance),
+  isSuccess,
+  mode,
+  playerName: null,
+  score: state.score,
+});
 
 const fillPixel = (
   context: CanvasRenderingContext2D,
@@ -710,16 +783,20 @@ const drawStoryEnding = (
     assets,
   );
 
-  const boxWidth = 440;
+  const boxWidth = 540;
+  const boxHeight = 56;
   const boxX = (GAME_WIDTH - boxWidth) / 2;
+  const boxY = 10;
 
-  fillPixel(context, boxX, 20, boxWidth, 48, '#d4d0c8');
-  fillPixel(context, boxX, 20, boxWidth, 10, '#0054e3');
+  fillPixel(context, boxX, boxY, boxWidth, boxHeight, '#d4d0c8');
+  fillPixel(context, boxX, boxY, boxWidth, 12, '#0054e3');
   context.fillStyle = '#111111';
-  context.font = '18px "Lucida Console", "Courier New", monospace';
+  context.font = '21px "Lucida Console", "Courier New", monospace';
   context.textAlign = 'center';
-  context.fillText(STORY_COMPLETE_MESSAGE, GAME_WIDTH / 2, 52);
+  context.textBaseline = 'middle';
+  context.fillText(STORY_COMPLETE_MESSAGE, GAME_WIDTH / 2, boxY + 38);
   context.textAlign = 'left';
+  context.textBaseline = 'alphabetic';
 };
 
 const drawScene = (
@@ -785,15 +862,20 @@ const drawScene = (
   }
 
   if (status === 'game-over') {
-    fillPixel(context, 236, 106, 248, 66, '#d4d0c8');
-    fillPixel(context, 236, 106, 248, 12, '#0054e3');
-    context.fillStyle = '#111111';
-    context.font = '14px "Lucida Console", "Courier New", monospace';
-    context.fillText('Потрачено', 300, 141);
+    const boxWidth = 420;
+    const boxHeight = 92;
+    const boxX = (GAME_WIDTH - boxWidth) / 2;
+    const boxY = 96;
 
-    if (mode !== 'story') {
-      context.fillText(`RINGS ${state.coinsCollected}`, 306, 160);
-    }
+    fillPixel(context, boxX, boxY, boxWidth, boxHeight, '#d4d0c8');
+    fillPixel(context, boxX, boxY, boxWidth, 16, '#0054e3');
+    context.fillStyle = '#111111';
+    context.font = 'bold 52px "Lucida Console", "Courier New", monospace';
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.fillText('ПОТРАЧЕНО', GAME_WIDTH / 2, boxY + boxHeight / 2 + 8);
+    context.textAlign = 'left';
+    context.textBaseline = 'alphabetic';
   }
 };
 
@@ -935,11 +1017,19 @@ export function DinoMinigameLauncher() {
   const statusRef = useRef<GameStatus>('idle');
   const publishedScoreRef = useRef(0);
   const [isOpen, setIsOpen] = useState(false);
+  const [gameScreen, setGameScreen] = useState<GameScreen>('menu');
   const [score, setScore] = useState(0);
-  const [bestScore, setBestScore] = useState(0);
   const [selectedMode, setSelectedMode] = useState<GameMode | null>(null);
   const [status, setStatus] = useState<GameStatus>('idle');
   const [assetsVersion, setAssetsVersion] = useState(0);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [isLeaderboardLoading, setIsLeaderboardLoading] = useState(false);
+  const [pendingLeaderboardAttempt, setPendingLeaderboardAttempt] =
+    useState<GameAttemptPayload | null>(null);
+  const [playerNameInput, setPlayerNameInput] = useState('');
+  const [playerNameError, setPlayerNameError] = useState<string | null>(null);
+  const [isPlayerNameSaving, setIsPlayerNameSaving] = useState(false);
+  const [isControlsOpen, setIsControlsOpen] = useState(false);
 
   useEffect(() => {
     statusRef.current = status;
@@ -998,6 +1088,47 @@ export function DinoMinigameLauncher() {
     [],
   );
 
+  const loadLeaderboard = useCallback(async (signal?: AbortSignal) => {
+    setIsLeaderboardLoading(true);
+
+    try {
+      const response = await fetch('/api/game/attempts', {
+        cache: 'no-store',
+        signal,
+      });
+
+      if (!response.ok) {
+        if (!signal?.aborted) {
+          setLeaderboard([]);
+        }
+
+        return;
+      }
+
+      const body: unknown = await response.json();
+
+      if (!isRecord(body) || body.ok !== true || !isRecord(body.data)) {
+        if (!signal?.aborted) {
+          setLeaderboard([]);
+        }
+
+        return;
+      }
+
+      if (!signal?.aborted) {
+        setLeaderboard(parseLeaderboardEntries(body.data.leaderboard));
+      }
+    } catch {
+      if (!signal?.aborted) {
+        setLeaderboard([]);
+      }
+    } finally {
+      if (!signal?.aborted) {
+        setIsLeaderboardLoading(false);
+      }
+    }
+  }, []);
+
   useEffect(() => {
     if (!isOpen) {
       return;
@@ -1050,30 +1181,38 @@ export function DinoMinigameLauncher() {
     };
 
     void loadSettings();
+    void loadLeaderboard(abortController.signal);
 
     return () => {
       abortController.abort();
     };
-  }, [drawCurrentFrame, isOpen]);
+  }, [drawCurrentFrame, isOpen, loadLeaderboard]);
 
   const saveGameAttempt = useCallback(
-    (mode: GameMode, state: GameState, isSuccess: boolean) => {
-      void fetch('/api/game/attempts', {
-        body: JSON.stringify({
-          coinsCollected: state.coinsCollected,
-          distance: Math.round(state.distance),
-          isSuccess,
-          mode,
-          playerName: null,
-          score: state.score,
-        }),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        method: 'POST',
-      }).catch(() => undefined);
+    async (attempt: GameAttemptPayload) => {
+      try {
+        const response = await fetch('/api/game/attempts', {
+          body: JSON.stringify(attempt),
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          method: 'POST',
+        });
+
+        if (!response.ok) {
+          return false;
+        }
+
+        if (attempt.mode === 'endless') {
+          await loadLeaderboard();
+        }
+
+        return true;
+      } catch {
+        return false;
+      }
     },
-    [],
+    [loadLeaderboard],
   );
 
   const animate = useCallback(
@@ -1107,7 +1246,7 @@ export function DinoMinigameLauncher() {
         }
 
         cancelAnimation();
-        saveGameAttempt('story', state, true);
+        void saveGameAttempt(createGameAttemptPayload('story', state, true));
         statusRef.current = 'story-complete';
         setStatus('story-complete');
         drawCurrentFrame('story-complete');
@@ -1123,12 +1262,21 @@ export function DinoMinigameLauncher() {
 
       if (hasCollision) {
         cancelAnimation();
-        setBestScore((currentBestScore) =>
-          Math.max(currentBestScore, state.score),
-        );
-        if (currentMode) {
-          saveGameAttempt(currentMode, state, false);
+        const attempt = currentMode
+          ? createGameAttemptPayload(currentMode, state, false)
+          : null;
+
+        if (
+          attempt?.mode === 'endless' &&
+          doesScoreEnterLeaderboard(attempt.score, leaderboard)
+        ) {
+          setPendingLeaderboardAttempt(attempt);
+          setPlayerNameInput('');
+          setPlayerNameError(null);
+        } else if (attempt) {
+          void saveGameAttempt(attempt);
         }
+
         statusRef.current = 'game-over';
         setStatus('game-over');
         drawCurrentFrame('game-over');
@@ -1137,44 +1285,59 @@ export function DinoMinigameLauncher() {
 
       animationFrameRef.current = window.requestAnimationFrame(animate);
     },
-    [cancelAnimation, drawCurrentFrame, saveGameAttempt],
+    [cancelAnimation, drawCurrentFrame, leaderboard, saveGameAttempt],
   );
 
-  const startGame = useCallback(() => {
-    const mode = selectedModeRef.current;
+  const startGame = useCallback(
+    (modeOverride?: GameMode | null) => {
+      if (pendingLeaderboardAttempt || isPlayerNameSaving) {
+        return;
+      }
 
-    if (!mode) {
-      return;
-    }
+      const mode = modeOverride ?? selectedModeRef.current;
 
-    cancelAnimation();
-    gameStateRef.current = getInitialGameState(gameSettingsRef.current, mode);
-    publishedScoreRef.current = 0;
-    setScore(0);
-    statusRef.current = 'running';
-    setStatus('running');
-    lastFrameTimeRef.current = null;
-    animationFrameRef.current = window.requestAnimationFrame(animate);
-  }, [animate, cancelAnimation]);
-
-  const selectMode = useCallback(
-    (mode: GameMode) => {
-      if (statusRef.current === 'running') {
+      if (!mode) {
         return;
       }
 
       cancelAnimation();
       selectedModeRef.current = mode;
       setSelectedMode(mode);
+      setGameScreen('game');
+      setIsControlsOpen(false);
       gameStateRef.current = getInitialGameState(gameSettingsRef.current, mode);
       publishedScoreRef.current = 0;
       setScore(0);
-      statusRef.current = 'idle';
-      setStatus('idle');
-      drawCurrentFrame('idle');
+      statusRef.current = 'running';
+      setStatus('running');
+      lastFrameTimeRef.current = null;
+      animationFrameRef.current = window.requestAnimationFrame(animate);
     },
-    [cancelAnimation, drawCurrentFrame],
+    [animate, cancelAnimation, isPlayerNameSaving, pendingLeaderboardAttempt],
   );
+
+  const openMenu = useCallback(() => {
+    if (pendingLeaderboardAttempt || isPlayerNameSaving) {
+      return;
+    }
+
+    cancelAnimation();
+    selectedModeRef.current = null;
+    setSelectedMode(null);
+    gameStateRef.current = getInitialGameState(gameSettingsRef.current, null);
+    publishedScoreRef.current = 0;
+    setScore(0);
+    statusRef.current = 'idle';
+    setStatus('idle');
+    setGameScreen('menu');
+    setIsControlsOpen(false);
+    void loadLeaderboard();
+  }, [
+    cancelAnimation,
+    isPlayerNameSaving,
+    loadLeaderboard,
+    pendingLeaderboardAttempt,
+  ]);
 
   const jump = useCallback(() => {
     const state = gameStateRef.current;
@@ -1190,6 +1353,10 @@ export function DinoMinigameLauncher() {
   const handleCanvasPointerDown = (event: PointerEvent<HTMLCanvasElement>) => {
     event.preventDefault();
 
+    if (pendingLeaderboardAttempt) {
+      return;
+    }
+
     if (statusRef.current === 'running') {
       jump();
       return;
@@ -1199,10 +1366,103 @@ export function DinoMinigameLauncher() {
       return;
     }
 
-    startGame();
+    startGame(selectedModeRef.current);
+  };
+
+  const clearLeaderboardPrompt = useCallback(() => {
+    setPendingLeaderboardAttempt(null);
+    setPlayerNameInput('');
+    setPlayerNameError(null);
+    setIsPlayerNameSaving(false);
+  }, []);
+
+  const savePendingAttemptAsGuest = useCallback(async () => {
+    if (!pendingLeaderboardAttempt) {
+      return;
+    }
+
+    setIsPlayerNameSaving(true);
+    const didSave = await saveGameAttempt({
+      ...pendingLeaderboardAttempt,
+      playerName: null,
+    });
+
+    if (!didSave) {
+      setPlayerNameError('Не удалось сохранить результат. Попробуйте еще раз.');
+      setIsPlayerNameSaving(false);
+      return;
+    }
+
+    clearLeaderboardPrompt();
+  }, [clearLeaderboardPrompt, pendingLeaderboardAttempt, saveGameAttempt]);
+
+  const handleLeaderboardNameSubmit = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+
+      if (!pendingLeaderboardAttempt) {
+        return;
+      }
+
+      const playerName = playerNameInput.trim();
+
+      if (playerName.length > PLAYER_NAME_MAX_LENGTH) {
+        setPlayerNameError(
+          `Имя должно быть не длиннее ${PLAYER_NAME_MAX_LENGTH} символов.`,
+        );
+        return;
+      }
+
+      setIsPlayerNameSaving(true);
+      const didSave = await saveGameAttempt({
+        ...pendingLeaderboardAttempt,
+        playerName: playerName.length > 0 ? playerName : null,
+      });
+
+      if (!didSave) {
+        setPlayerNameError(
+          'Не удалось сохранить результат. Попробуйте еще раз.',
+        );
+        setIsPlayerNameSaving(false);
+        return;
+      }
+
+      clearLeaderboardPrompt();
+    },
+    [
+      clearLeaderboardPrompt,
+      pendingLeaderboardAttempt,
+      playerNameInput,
+      saveGameAttempt,
+    ],
+  );
+
+  const openWindow = () => {
+    selectedModeRef.current = null;
+    setSelectedMode(null);
+    gameStateRef.current = getInitialGameState(gameSettingsRef.current, null);
+    publishedScoreRef.current = 0;
+    setScore(0);
+    statusRef.current = 'idle';
+    setStatus('idle');
+    setGameScreen('menu');
+    setIsControlsOpen(false);
+    clearLeaderboardPrompt();
+    setIsOpen(true);
   };
 
   const closeWindow = () => {
+    if (isPlayerNameSaving) {
+      return;
+    }
+
+    if (pendingLeaderboardAttempt) {
+      void saveGameAttempt({
+        ...pendingLeaderboardAttempt,
+        playerName: null,
+      });
+    }
+
     cancelAnimation();
     setIsOpen(false);
     selectedModeRef.current = null;
@@ -1211,15 +1471,18 @@ export function DinoMinigameLauncher() {
     setStatus('idle');
     gameStateRef.current = getInitialGameState(gameSettingsRef.current, null);
     setScore(0);
+    setGameScreen('menu');
+    setIsControlsOpen(false);
+    clearLeaderboardPrompt();
   };
 
   useEffect(() => {
-    if (!isOpen) {
+    if (!isOpen || gameScreen !== 'game') {
       return;
     }
 
     drawCurrentFrame(status);
-  }, [assetsVersion, drawCurrentFrame, isOpen, status]);
+  }, [assetsVersion, drawCurrentFrame, gameScreen, isOpen, status]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -1237,6 +1500,10 @@ export function DinoMinigameLauncher() {
         return;
       }
 
+      if (gameScreen !== 'game' || pendingLeaderboardAttempt) {
+        return;
+      }
+
       event.preventDefault();
 
       if (statusRef.current === 'running') {
@@ -1248,7 +1515,7 @@ export function DinoMinigameLauncher() {
         return;
       }
 
-      startGame();
+      startGame(selectedModeRef.current);
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -1256,27 +1523,17 @@ export function DinoMinigameLauncher() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isOpen, jump, startGame]);
+  }, [gameScreen, isOpen, jump, pendingLeaderboardAttempt, startGame]);
 
   useEffect(() => cancelAnimation, [cancelAnimation]);
 
-  const primaryActionLabel =
-    status === 'running'
-      ? 'Идет игра'
-      : status === 'game-over' || status === 'story-complete'
-        ? 'Restart'
-        : selectedMode
-          ? 'Start game'
-          : 'Выберите режим';
-  const selectedModeLabel = selectedMode
-    ? GAME_MODE_LABELS[selectedMode]
-    : 'Не выбран';
+  const topEndlessEntry = leaderboard[0] ?? null;
 
   return (
     <>
       <button
         className="rounded-[3px] border border-t-white border-l-white border-r-[#404040] border-b-[#404040] bg-[#d4d0c8] px-4 py-2 text-sm font-bold text-black shadow-[inset_1px_1px_0_white] active:border-t-[#404040] active:border-l-[#404040] active:border-r-white active:border-b-white"
-        onClick={() => setIsOpen(true)}
+        onClick={openWindow}
         type="button"
       >
         Start
@@ -1289,7 +1546,7 @@ export function DinoMinigameLauncher() {
           className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/35 px-2 py-4 sm:px-4"
           role="dialog"
         >
-          <div className="w-full max-w-[760px] overflow-hidden border-t-2 border-l-2 border-r-2 border-b-2 border-t-white border-l-white border-r-[#404040] border-b-[#404040] bg-[#d4d0c8] shadow-[8px_8px_0_rgba(0,0,0,0.3)]">
+          <div className="relative max-h-[calc(100vh-2rem)] w-full max-w-[760px] overflow-y-auto border-t-2 border-l-2 border-r-2 border-b-2 border-t-white border-l-white border-r-[#404040] border-b-[#404040] bg-[#d4d0c8] shadow-[8px_8px_0_rgba(0,0,0,0.3)]">
             <div className="flex items-center justify-between gap-3 bg-gradient-to-r from-[#0054e3] via-[#2b7cff] to-[#67a7ff] px-2 py-1.5 text-sm font-bold text-white">
               <span id="dino-minigame-title" className="truncate">
                 Dino Bride.exe
@@ -1297,6 +1554,7 @@ export function DinoMinigameLauncher() {
               <button
                 aria-label="Закрыть миниигру"
                 className="flex h-8 w-8 items-center justify-center border border-t-white border-l-white border-r-[#404040] border-b-[#404040] bg-[#d4d0c8] text-lg leading-none text-black active:border-t-[#404040] active:border-l-[#404040] active:border-r-white active:border-b-white sm:h-6 sm:w-6 sm:text-base"
+                disabled={isPlayerNameSaving}
                 onClick={closeWindow}
                 type="button"
               >
@@ -1305,84 +1563,285 @@ export function DinoMinigameLauncher() {
             </div>
 
             <div className="space-y-3 border-t border-white bg-[#ece9d8] p-3 sm:p-4">
-              <div
-                aria-label="Выбор режима игры"
-                className="grid grid-cols-2 gap-2"
-                role="group"
-              >
-                {gameModes.map((mode) => (
+              {gameScreen === 'menu' ? (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-2" role="group">
+                    {gameModes.map((mode) => (
+                      <button
+                        className={`${xpButtonClassName} min-h-14 text-base`}
+                        key={mode}
+                        onClick={() => startGame(mode)}
+                        type="button"
+                      >
+                        {menuModeLabels[mode]}
+                      </button>
+                    ))}
+                  </div>
+
                   <button
-                    aria-pressed={selectedMode === mode}
-                    className={`${xpButtonClassName} ${
-                      selectedMode === mode
-                        ? 'ring-2 ring-[#003399] ring-offset-1 ring-offset-[#ece9d8]'
-                        : ''
-                    }`}
-                    disabled={status === 'running'}
-                    key={mode}
-                    onClick={() => selectMode(mode)}
+                    className={`${xpButtonClassName} w-full`}
+                    onClick={() => setIsControlsOpen(true)}
                     type="button"
                   >
-                    {GAME_MODE_LABELS[mode]}
+                    Управление
                   </button>
-                ))}
-              </div>
 
-              {selectedMode !== 'story' ? (
-                <div className="grid grid-cols-2 gap-2 text-xs font-bold text-[#003399] sm:grid-cols-4">
-                  <div className="truncate border border-[#7f9db9] bg-white px-2 py-1 shadow-[inset_1px_1px_0_white]">
-                    Режим: {selectedModeLabel}
+                  <section className="border border-[#7f9db9] bg-white shadow-[inset_1px_1px_0_white]">
+                    <div className="bg-[#0054e3] px-2 py-1 text-sm font-bold text-white">
+                      Таблица лидеров
+                    </div>
+                    <div className="space-y-2 p-3 text-sm">
+                      <p className="text-xs font-bold uppercase text-[#555]">
+                        Доска почета
+                      </p>
+                      {isLeaderboardLoading ? (
+                        <p className="border border-[#d0d0d0] bg-[#f8f8f8] px-2 py-2">
+                          Загрузка...
+                        </p>
+                      ) : leaderboard.length > 0 ? (
+                        <ol className="space-y-2">
+                          {leaderboard.map((entry, index) => (
+                            <li
+                              className="grid grid-cols-[2rem_1fr_auto] items-center gap-2 border border-[#d0d0d0] bg-[#f8f8f8] px-2 py-2 font-bold"
+                              key={entry.id}
+                            >
+                              <span className="text-[#003399]">
+                                {index + 1}.
+                              </span>
+                              <span className="min-w-0 truncate">
+                                {getDisplayPlayerName(entry.playerName)}
+                              </span>
+                              <span>{formatGameScore(entry.score)}</span>
+                            </li>
+                          ))}
+                        </ol>
+                      ) : (
+                        <p className="border border-[#d0d0d0] bg-[#f8f8f8] px-2 py-2">
+                          Пока нет результатов.
+                        </p>
+                      )}
+                    </div>
+                  </section>
+                </div>
+              ) : (
+                <>
+                  {selectedMode === 'endless' ? (
+                    <div className="border border-[#7f9db9] bg-white px-2 py-1 text-xs font-bold text-[#003399] shadow-[inset_1px_1px_0_white]">
+                      Король Дино:{' '}
+                      <span className="text-black">
+                        {getDisplayPlayerName(
+                          topEndlessEntry?.playerName ?? null,
+                        )}
+                      </span>{' '}
+                      - {formatGameScore(topEndlessEntry?.score ?? 0)}
+                    </div>
+                  ) : null}
+
+                  <div className="border border-[#808080] bg-white p-1 shadow-[inset_1px_1px_0_rgba(0,0,0,0.25)]">
+                    <canvas
+                      aria-label="Миниигра Dino Bride"
+                      className="dino-game-canvas block h-auto w-full bg-white"
+                      height={GAME_HEIGHT}
+                      onPointerDown={handleCanvasPointerDown}
+                      ref={canvasRef}
+                      role="img"
+                      width={GAME_WIDTH}
+                    />
                   </div>
-                  <div className="border border-[#7f9db9] bg-white px-2 py-1 shadow-[inset_1px_1px_0_white]">
-                    Score: {score}
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      className={xpButtonClassName}
+                      onClick={openMenu}
+                      type="button"
+                    >
+                      Меню
+                    </button>
+                    <button
+                      className={xpButtonClassName}
+                      disabled={!selectedMode}
+                      onClick={() => startGame(selectedMode)}
+                      type="button"
+                    >
+                      Начать заново
+                    </button>
                   </div>
-                  <div className="border border-[#7f9db9] bg-white px-2 py-1 text-center shadow-[inset_1px_1px_0_white]">
-                    Rings: {gameStateRef.current.coinsCollected}
+                </>
+              )}
+            </div>
+
+            {isControlsOpen ? (
+              <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/30 p-3">
+                <div
+                  aria-labelledby="dino-controls-title"
+                  className="w-full max-w-sm border-t-2 border-l-2 border-r-2 border-b-2 border-t-white border-l-white border-r-[#404040] border-b-[#404040] bg-[#d4d0c8]"
+                  role="dialog"
+                >
+                  <div className="flex items-center justify-between gap-2 bg-[#0054e3] px-2 py-1 text-sm font-bold text-white">
+                    <span id="dino-controls-title">Управление</span>
+                    <button
+                      aria-label="Закрыть окно управления"
+                      className="flex h-7 w-7 items-center justify-center border border-t-white border-l-white border-r-[#404040] border-b-[#404040] bg-[#d4d0c8] text-black"
+                      onClick={() => setIsControlsOpen(false)}
+                      type="button"
+                    >
+                      x
+                    </button>
                   </div>
-                  <div className="border border-[#7f9db9] bg-white px-2 py-1 text-right shadow-[inset_1px_1px_0_white]">
-                    Best: {bestScore}
+                  <div className="space-y-3 p-3 text-sm font-bold text-black">
+                    <svg
+                      aria-hidden="true"
+                      className="mx-auto h-24 w-full max-w-[260px]"
+                      viewBox="0 0 260 96"
+                    >
+                      <rect
+                        fill="#f8f8f8"
+                        height="36"
+                        stroke="#404040"
+                        width="44"
+                        x="18"
+                        y="14"
+                      />
+                      <text
+                        fill="#003399"
+                        fontFamily="monospace"
+                        fontSize="24"
+                        fontWeight="700"
+                        textAnchor="middle"
+                        x="40"
+                        y="39"
+                      >
+                        ↑
+                      </text>
+                      <rect
+                        fill="#f8f8f8"
+                        height="36"
+                        stroke="#404040"
+                        width="92"
+                        x="76"
+                        y="14"
+                      />
+                      <text
+                        fill="#003399"
+                        fontFamily="monospace"
+                        fontSize="15"
+                        fontWeight="700"
+                        textAnchor="middle"
+                        x="122"
+                        y="38"
+                      >
+                        SPACE
+                      </text>
+                      <circle
+                        cx="213"
+                        cy="35"
+                        fill="#f8f8f8"
+                        r="21"
+                        stroke="#404040"
+                      />
+                      <path
+                        d="M213 20v30M198 35h30"
+                        stroke="#003399"
+                        strokeLinecap="square"
+                        strokeWidth="5"
+                      />
+                      <rect
+                        fill="#d4d0c8"
+                        height="22"
+                        stroke="#404040"
+                        width="118"
+                        x="71"
+                        y="64"
+                      />
+                      <text
+                        fill="#111111"
+                        fontFamily="monospace"
+                        fontSize="12"
+                        fontWeight="700"
+                        textAnchor="middle"
+                        x="130"
+                        y="79"
+                      >
+                        JUMP
+                      </text>
+                    </svg>
+                    <p>Десктоп: стрелка вверх или пробел для прыжка.</p>
+                    <p>
+                      Мобильные устройства: тап по игровому полю для прыжка.
+                    </p>
+                    <button
+                      className={`${xpButtonClassName} w-full`}
+                      onClick={() => setIsControlsOpen(false)}
+                      type="button"
+                    >
+                      OK
+                    </button>
                   </div>
                 </div>
-              ) : null}
-
-              <div className="border border-[#808080] bg-white p-1 shadow-[inset_1px_1px_0_rgba(0,0,0,0.25)]">
-                <canvas
-                  aria-label="Миниигра Dino Bride"
-                  className="dino-game-canvas block h-auto w-full bg-white"
-                  height={GAME_HEIGHT}
-                  onPointerDown={handleCanvasPointerDown}
-                  ref={canvasRef}
-                  role="img"
-                  width={GAME_WIDTH}
-                />
               </div>
+            ) : null}
 
-              <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-between">
-                <button
-                  className={xpButtonClassName}
-                  disabled={status === 'running' || !selectedMode}
-                  onClick={startGame}
-                  type="button"
+            {pendingLeaderboardAttempt ? (
+              <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/35 p-3">
+                <form
+                  aria-labelledby="dino-player-name-title"
+                  className="w-full max-w-sm border-t-2 border-l-2 border-r-2 border-b-2 border-t-white border-l-white border-r-[#404040] border-b-[#404040] bg-[#d4d0c8]"
+                  onSubmit={handleLeaderboardNameSubmit}
+                  role="dialog"
                 >
-                  {primaryActionLabel}
-                </button>
-                <button
-                  className={xpButtonClassName}
-                  disabled={status !== 'running'}
-                  onClick={jump}
-                  type="button"
-                >
-                  Прыжок
-                </button>
-                <button
-                  className={`${xpButtonClassName} col-span-2 sm:ml-auto`}
-                  onClick={closeWindow}
-                  type="button"
-                >
-                  Закрыть
-                </button>
+                  <div className="bg-[#0054e3] px-2 py-1 text-sm font-bold text-white">
+                    <span id="dino-player-name-title">Новый рекорд</span>
+                  </div>
+                  <div className="space-y-3 p-3 text-sm text-black">
+                    <label className="block font-bold">
+                      <span className="mb-1 block">Имя игрока</span>
+                      <input
+                        autoFocus
+                        className="min-h-11 w-full border border-[#7f9db9] bg-white px-3 py-2 text-base outline-none"
+                        disabled={isPlayerNameSaving}
+                        maxLength={PLAYER_NAME_MAX_LENGTH}
+                        onChange={(event) => {
+                          setPlayerNameInput(event.target.value);
+                          setPlayerNameError(null);
+                        }}
+                        placeholder={GUEST_PLAYER_NAME}
+                        type="text"
+                        value={playerNameInput}
+                      />
+                    </label>
+                    <p className="text-xs font-bold text-[#555]">
+                      До {PLAYER_NAME_MAX_LENGTH} символов. Пустое имя
+                      сохранится как {GUEST_PLAYER_NAME}.
+                    </p>
+                    {playerNameError ? (
+                      <p
+                        className="border border-[#a00000] bg-[#fff1f1] px-2 py-2 font-bold text-[#a00000]"
+                        role="alert"
+                      >
+                        {playerNameError}
+                      </p>
+                    ) : null}
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        className={xpButtonClassName}
+                        disabled={isPlayerNameSaving}
+                        type="submit"
+                      >
+                        Сохранить
+                      </button>
+                      <button
+                        className={xpButtonClassName}
+                        disabled={isPlayerNameSaving}
+                        onClick={savePendingAttemptAsGuest}
+                        type="button"
+                      >
+                        Гость
+                      </button>
+                    </div>
+                  </div>
+                </form>
               </div>
-            </div>
+            ) : null}
           </div>
         </div>
       ) : null}
