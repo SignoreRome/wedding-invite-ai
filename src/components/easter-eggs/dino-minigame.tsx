@@ -8,6 +8,14 @@ import {
   type PointerEvent,
 } from 'react';
 
+import {
+  DEFAULT_GAME_SETTINGS,
+  GAME_MODE_LABELS,
+  normalizeGameSettings,
+  type GameMode,
+  type GameSettings,
+} from '@/lib/dino-game';
+
 type GameStatus = 'idle' | 'running' | 'game-over';
 
 type Obstacle = {
@@ -36,6 +44,7 @@ type GameState = {
   nextEntityId: number;
   nextObstacleAt: number;
   obstacles: Obstacle[];
+  ringBonusScore: number;
   score: number;
   speed: number;
   velocityY: number;
@@ -66,6 +75,12 @@ const JUMP_VELOCITY = -760;
 const INITIAL_SPEED = 245;
 const MAX_SPEED = 430;
 const SPEED_ACCELERATION = 0.026;
+const DISTANCE_SCORE_DIVISOR = 32;
+const RING_BASE_SCORE_BONUS = 120;
+const RING_CHAIN_SCORE_BONUS = 15;
+const OBSTACLE_HITBOX_INSET_X = 22;
+const OBSTACLE_HITBOX_TOP_INSET = 22;
+const OBSTACLE_HITBOX_BOTTOM_INSET = 18;
 const RING_SPRITE_SRC = '/ring.png';
 const STANDING_DINO_SPRITE_SRC = '/dino-bride.png';
 const RUNNING_DINO_SPRITE_SRC = '/dino-bride-run.png';
@@ -107,10 +122,20 @@ const desktopObstacleIconSrcs = [
 const xpButtonClassName =
   'rounded-[3px] border border-t-white border-l-white border-r-[#404040] border-b-[#404040] bg-[#d4d0c8] px-4 py-2 text-sm font-bold text-black shadow-[inset_1px_1px_0_white] active:border-t-[#404040] active:border-l-[#404040] active:border-r-white active:border-b-white disabled:cursor-not-allowed disabled:border-[#808080] disabled:bg-[#c0c0c0] disabled:text-[#606060]';
 
+const gameModes: readonly GameMode[] = ['story', 'endless'];
+
 const randomBetween = (min: number, max: number) =>
   min + Math.random() * (max - min);
 
-const getInitialGameState = (): GameState => ({
+const getModeSpeedMultiplier = (
+  mode: GameMode | null,
+  settings: GameSettings,
+) => (mode === 'endless' ? settings.endlessSpeedMultiplier : 1);
+
+const getInitialGameState = (
+  settings: GameSettings = DEFAULT_GAME_SETTINGS,
+  mode: GameMode | null = null,
+): GameState => ({
   coins: [],
   coinsCollected: 0,
   dinoY: GROUND_Y - DINO_HEIGHT,
@@ -119,8 +144,9 @@ const getInitialGameState = (): GameState => ({
   nextEntityId: 1,
   nextObstacleAt: 360,
   obstacles: [],
+  ringBonusScore: 0,
   score: 0,
-  speed: INITIAL_SPEED,
+  speed: INITIAL_SPEED * getModeSpeedMultiplier(mode, settings),
   velocityY: 0,
 });
 
@@ -136,6 +162,26 @@ const getDinoHitbox = (dinoY: number): Rect => ({
   x: DINO_X + 20,
   y: dinoY + 18,
 });
+
+const getObstacleHitbox = (obstacle: Obstacle): Rect => ({
+  height: Math.max(
+    1,
+    obstacle.height - OBSTACLE_HITBOX_TOP_INSET - OBSTACLE_HITBOX_BOTTOM_INSET,
+  ),
+  width: Math.max(1, obstacle.width - OBSTACLE_HITBOX_INSET_X * 2),
+  x: obstacle.x + OBSTACLE_HITBOX_INSET_X,
+  y: obstacle.y + OBSTACLE_HITBOX_TOP_INSET,
+});
+
+const calculateRingScoreBonus = (collectedRingNumber: number) =>
+  RING_BASE_SCORE_BONUS +
+  Math.max(0, collectedRingNumber - 1) * RING_CHAIN_SCORE_BONUS;
+
+const calculateScore = (state: GameState) =>
+  Math.floor(state.distance / DISTANCE_SCORE_DIVISOR) + state.ringBonusScore;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
 const fillPixel = (
   context: CanvasRenderingContext2D,
@@ -531,7 +577,7 @@ const drawScene = (
     fillPixel(context, 236, 106, 248, 12, '#0054e3');
     context.fillStyle = '#111111';
     context.font = '14px "Lucida Console", "Courier New", monospace';
-    context.fillText('GAME OVER', 310, 141);
+    context.fillText('Потрачено', 300, 141);
     context.fillText(`RINGS ${state.coinsCollected}`, 306, 160);
   }
 };
@@ -569,11 +615,19 @@ const spawnCoin = (state: GameState) => {
   state.nextCoinAt = state.distance + randomBetween(210, 330);
 };
 
-const updateGame = (state: GameState, deltaTime: number) => {
+const updateGame = (
+  state: GameState,
+  deltaTime: number,
+  mode: GameMode | null,
+  settings: GameSettings,
+) => {
+  const speedMultiplier = getModeSpeedMultiplier(mode, settings);
+
   state.distance += state.speed * deltaTime;
   state.speed = Math.min(
-    INITIAL_SPEED + state.distance * SPEED_ACCELERATION,
-    MAX_SPEED,
+    INITIAL_SPEED * speedMultiplier +
+      state.distance * SPEED_ACCELERATION * speedMultiplier,
+    MAX_SPEED * speedMultiplier,
   );
 
   state.velocityY += GRAVITY * deltaTime;
@@ -623,19 +677,18 @@ const updateGame = (state: GameState, deltaTime: number) => {
       return coin;
     }
 
-    state.coinsCollected += 1;
+    const collectedRingNumber = state.coinsCollected + 1;
+
+    state.coinsCollected = collectedRingNumber;
+    state.ringBonusScore += calculateRingScoreBonus(collectedRingNumber);
+
     return { ...coin, collected: true };
   });
 
-  state.score = Math.floor(state.distance / 32) + state.coinsCollected * 25;
+  state.score = calculateScore(state);
 
   return state.obstacles.some((obstacle) =>
-    intersects(dinoHitbox, {
-      height: obstacle.height - 16,
-      width: obstacle.width - 20,
-      x: obstacle.x + 10,
-      y: obstacle.y + 10,
-    }),
+    intersects(dinoHitbox, getObstacleHitbox(obstacle)),
   );
 };
 
@@ -644,6 +697,8 @@ export function DinoMinigameLauncher() {
   const animationFrameRef = useRef<number | null>(null);
   const lastFrameTimeRef = useRef<number | null>(null);
   const gameStateRef = useRef<GameState>(getInitialGameState());
+  const gameSettingsRef = useRef<GameSettings>(DEFAULT_GAME_SETTINGS);
+  const selectedModeRef = useRef<GameMode | null>(null);
   const assetsRef = useRef<GameAssets>({
     dinoRunningSprite: null,
     dinoStandingSprite: null,
@@ -655,6 +710,7 @@ export function DinoMinigameLauncher() {
   const [isOpen, setIsOpen] = useState(false);
   const [score, setScore] = useState(0);
   const [bestScore, setBestScore] = useState(0);
+  const [selectedMode, setSelectedMode] = useState<GameMode | null>(null);
   const [status, setStatus] = useState<GameStatus>('idle');
   const [assetsVersion, setAssetsVersion] = useState(0);
 
@@ -708,6 +764,84 @@ export function DinoMinigameLauncher() {
     [],
   );
 
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const abortController = new AbortController();
+
+    const loadSettings = async () => {
+      try {
+        const response = await fetch('/api/game/settings', {
+          cache: 'no-store',
+          signal: abortController.signal,
+        });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const body: unknown = await response.json();
+
+        if (!isRecord(body) || body.ok !== true || !isRecord(body.data)) {
+          return;
+        }
+
+        gameSettingsRef.current = normalizeGameSettings({
+          endlessSpeedMultiplier:
+            typeof body.data.endlessSpeedMultiplier === 'number'
+              ? body.data.endlessSpeedMultiplier
+              : undefined,
+          storyRequiredDistance:
+            typeof body.data.storyRequiredDistance === 'number'
+              ? body.data.storyRequiredDistance
+              : undefined,
+        });
+
+        if (statusRef.current !== 'running') {
+          gameStateRef.current = getInitialGameState(
+            gameSettingsRef.current,
+            selectedModeRef.current,
+          );
+          publishedScoreRef.current = 0;
+          setScore(0);
+          drawCurrentFrame(statusRef.current);
+        }
+      } catch {
+        if (abortController.signal.aborted) {
+          return;
+        }
+      }
+    };
+
+    void loadSettings();
+
+    return () => {
+      abortController.abort();
+    };
+  }, [drawCurrentFrame, isOpen]);
+
+  const saveGameAttempt = useCallback(
+    (mode: GameMode, state: GameState, isSuccess: boolean) => {
+      void fetch('/api/game/attempts', {
+        body: JSON.stringify({
+          coinsCollected: state.coinsCollected,
+          distance: Math.round(state.distance),
+          isSuccess,
+          mode,
+          playerName: null,
+          score: state.score,
+        }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        method: 'POST',
+      }).catch(() => undefined);
+    },
+    [],
+  );
+
   const animate = useCallback(
     (timestamp: number) => {
       const previousTimestamp = lastFrameTimeRef.current ?? timestamp;
@@ -715,7 +849,12 @@ export function DinoMinigameLauncher() {
 
       lastFrameTimeRef.current = timestamp;
 
-      const hasCollision = updateGame(gameStateRef.current, deltaTime);
+      const hasCollision = updateGame(
+        gameStateRef.current,
+        deltaTime,
+        selectedModeRef.current,
+        gameSettingsRef.current,
+      );
       drawCurrentFrame('running');
 
       if (gameStateRef.current.score !== publishedScoreRef.current) {
@@ -724,10 +863,15 @@ export function DinoMinigameLauncher() {
       }
 
       if (hasCollision) {
+        const currentMode = selectedModeRef.current;
+
         cancelAnimation();
         setBestScore((currentBestScore) =>
           Math.max(currentBestScore, gameStateRef.current.score),
         );
+        if (currentMode) {
+          saveGameAttempt(currentMode, gameStateRef.current, false);
+        }
         statusRef.current = 'game-over';
         setStatus('game-over');
         drawCurrentFrame('game-over');
@@ -736,12 +880,18 @@ export function DinoMinigameLauncher() {
 
       animationFrameRef.current = window.requestAnimationFrame(animate);
     },
-    [cancelAnimation, drawCurrentFrame],
+    [cancelAnimation, drawCurrentFrame, saveGameAttempt],
   );
 
   const startGame = useCallback(() => {
+    const mode = selectedModeRef.current;
+
+    if (!mode) {
+      return;
+    }
+
     cancelAnimation();
-    gameStateRef.current = getInitialGameState();
+    gameStateRef.current = getInitialGameState(gameSettingsRef.current, mode);
     publishedScoreRef.current = 0;
     setScore(0);
     statusRef.current = 'running';
@@ -749,6 +899,25 @@ export function DinoMinigameLauncher() {
     lastFrameTimeRef.current = null;
     animationFrameRef.current = window.requestAnimationFrame(animate);
   }, [animate, cancelAnimation]);
+
+  const selectMode = useCallback(
+    (mode: GameMode) => {
+      if (statusRef.current === 'running') {
+        return;
+      }
+
+      cancelAnimation();
+      selectedModeRef.current = mode;
+      setSelectedMode(mode);
+      gameStateRef.current = getInitialGameState(gameSettingsRef.current, mode);
+      publishedScoreRef.current = 0;
+      setScore(0);
+      statusRef.current = 'idle';
+      setStatus('idle');
+      drawCurrentFrame('idle');
+    },
+    [cancelAnimation, drawCurrentFrame],
+  );
 
   const jump = useCallback(() => {
     const state = gameStateRef.current;
@@ -769,15 +938,21 @@ export function DinoMinigameLauncher() {
       return;
     }
 
+    if (!selectedModeRef.current) {
+      return;
+    }
+
     startGame();
   };
 
   const closeWindow = () => {
     cancelAnimation();
     setIsOpen(false);
+    selectedModeRef.current = null;
+    setSelectedMode(null);
     statusRef.current = 'idle';
     setStatus('idle');
-    gameStateRef.current = getInitialGameState();
+    gameStateRef.current = getInitialGameState(gameSettingsRef.current, null);
     setScore(0);
   };
 
@@ -812,6 +987,10 @@ export function DinoMinigameLauncher() {
         return;
       }
 
+      if (!selectedModeRef.current) {
+        return;
+      }
+
       startGame();
     };
 
@@ -829,7 +1008,12 @@ export function DinoMinigameLauncher() {
       ? 'Идет игра'
       : status === 'game-over'
         ? 'Restart'
-        : 'Start game';
+        : selectedMode
+          ? 'Start game'
+          : 'Выберите режим';
+  const selectedModeLabel = selectedMode
+    ? GAME_MODE_LABELS[selectedMode]
+    : 'Не выбран';
 
   return (
     <>
@@ -864,7 +1048,33 @@ export function DinoMinigameLauncher() {
             </div>
 
             <div className="space-y-3 border-t border-white bg-[#ece9d8] p-3 sm:p-4">
-              <div className="grid grid-cols-3 gap-2 text-xs font-bold text-[#003399]">
+              <div
+                aria-label="Выбор режима игры"
+                className="grid grid-cols-2 gap-2"
+                role="group"
+              >
+                {gameModes.map((mode) => (
+                  <button
+                    aria-pressed={selectedMode === mode}
+                    className={`${xpButtonClassName} ${
+                      selectedMode === mode
+                        ? 'ring-2 ring-[#003399] ring-offset-1 ring-offset-[#ece9d8]'
+                        : ''
+                    }`}
+                    disabled={status === 'running'}
+                    key={mode}
+                    onClick={() => selectMode(mode)}
+                    type="button"
+                  >
+                    {GAME_MODE_LABELS[mode]}
+                  </button>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-xs font-bold text-[#003399] sm:grid-cols-4">
+                <div className="truncate border border-[#7f9db9] bg-white px-2 py-1 shadow-[inset_1px_1px_0_white]">
+                  Режим: {selectedModeLabel}
+                </div>
                 <div className="border border-[#7f9db9] bg-white px-2 py-1 shadow-[inset_1px_1px_0_white]">
                   Score: {score}
                 </div>
@@ -891,7 +1101,7 @@ export function DinoMinigameLauncher() {
               <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-between">
                 <button
                   className={xpButtonClassName}
-                  disabled={status === 'running'}
+                  disabled={status === 'running' || !selectedMode}
                   onClick={startGame}
                   type="button"
                 >
